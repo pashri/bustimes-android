@@ -1,0 +1,80 @@
+[
+ {
+  "id": 189169,
+  "journey_id": 933228586,
+  "coordinates": [
+   -3.0428159,
+   53.2135086
+  ],
+  "heading": 300,
+  "datetime": "2026-09-08T15:04:34+01:00",
+  "destination": "Golftyn",
+  "block": "1450",
+  "delay": 25.0,
+  "date": "2026-09-08",
+  "trip_id": 608993089,
+  "service_id": 51024,
+  "service": {
+   "url": "/services/10-chester-connahs-quay",
+   "line_name": "10"
+  },
+  "vehicle": {
+   "url": "/vehicles/acym-anw-2906",
+   "name": "2906 - CX58 EWV",
+   "livery": 28,
+   "colour": "#25B0CF"
+  }
+ },
+ {
+  "id": 190635,
+  "journey_id": 933237245,
+  "coordinates": [
+   -2.882993,
+   53.2675819
+  ],
+  "heading": 54,
+  "datetime": "2026-09-08T15:04:24+01:00",
+  "destination": "Ellesmere Port",
+  "block": "1480",
+  "delay": -282.0,
+  "date": "2026-09-08",
+  "trip_id": 627501656,
+  "service_id": 79362,
+  "service": {
+   "url": "/services/101a-ellesmere-port-bus-interchange-stand-f-outlet",
+   "line_name": "101A"
+  },
+  "vehicle": {
+   "url": "/vehicles/acym-anw-3171",
+   "name": "3171 - CX14 BYJ",
+   "livery": 28,
+   "colour": "#25B0CF"
+  }
+ },
+ {
+  "id": 651313,
+  "journey_id": 933160491,
+  "coordinates": [
+   -3.1478729,
+   53.2413788
+  ],
+  "heading": 300,
+  "datetime": "2026-09-08T15:04:34+01:00",
+  "destination": "Flint",
+  "block": "Unknown",
+  "delay": 1.0,
+  "date": "2026-09-08",
+  "trip_id": 650475245,
+  "service_id": 78869,
+  "service": {
+   "url": "/services/f18-flint-rhyl-via-holywell-prestatyn",
+   "line_name": "F18"
+  },
+  "vehicle": {
+   "url": "/vehicles/paol-yj08-phz",
+   "name": "YJ08 PHZ",
+   "livery": 3187,
+   "colour": "#f9eea3"
+  }
+ }
+]

@@ -23,8 +23,15 @@ data class Vehicle(
     val service: VehicleService? = null,
     val vehicle: VehicleDetail? = null,
     val progress: VehicleProgress? = null,
-    /** Seconds behind schedule; negative means early. */
-    val delay: Int? = null,
+    /**
+     * Seconds behind schedule; negative means early.
+     *
+     * Typed as a Double because it is a computed value and some operators'
+     * feeds yield a fractional one (`-42.0`). Declaring it as an integer made
+     * selecting a bus from those operators throw while decoding, which looked
+     * like a crash on particular routes.
+     */
+    val delay: Double? = null,
     val seats: String? = null,
     val wheelchair: String? = null,
 ) {

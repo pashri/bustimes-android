@@ -91,23 +91,16 @@ class MapViewModel(
      */
     private var hasExplicitTarget = false
 
-    /**
-     * Whether a camera position was restored from a previous session.
-     *
-     * A remembered camera is the user's own last view and must not be
-     * overridden by auto-centring, or every launch would drag them back to
-     * wherever they happen to be standing.
-     */
-    private var hadRememberedCamera = false
 
     init {
         viewModelScope.launch {
+            // The remembered camera is only there to give the first frame
+            // something real to show: a fix can take seconds, and a grey
+            // rectangle for that long reads as a broken app. The map then
+            // moves to where the user actually is.
             val stored = cameraStore.read()
-            hadRememberedCamera = stored != null
             _state.update { it.copy(camera = stored ?: CameraState.UnitedKingdom) }
-            if (!hadRememberedCamera) {
-                centreOnUserIfPermitted()
-            }
+            centreOnUser()
         }
     }
 
@@ -297,27 +290,31 @@ class MapViewModel(
         }
     }
 
-    /** Requests a fresh position and asks the map to move there. */
+    /**
+     * Moves the map to where the user is now.
+     *
+     * The cached position is used first so the button responds immediately,
+     * then a fresh fix is requested and the camera moved again if it turns out
+     * somewhere else. Preferring the cache outright, as this did, meant the
+     * button kept returning to whatever stale fix the app started with.
+     */
     fun onLocateRequested() {
+        hasExplicitTarget = true
         viewModelScope.launch {
-            val position = locationProvider.lastKnown()
-                ?: locationProvider.current()
-                ?: return@launch
-            hasExplicitTarget = true
-            _state.update { it.copy(moveCameraTo = position) }
+            val cached = locationProvider.lastKnown()
+            if (cached != null) {
+                _state.update { it.copy(moveCameraTo = cached) }
+            }
+            val fresh = locationProvider.current() ?: return@launch
+            if (cached == null || fresh.isFurtherThanAStopFrom(cached)) {
+                _state.update { it.copy(moveCameraTo = fresh) }
+            }
         }
     }
 
-    /**
-     * Called once the user grants location permission.
-     *
-     * Granting permission is not itself a request to be taken somewhere, so
-     * this only centres the map when there was no remembered position to
-     * honour and nothing else has asked for a specific view.
-     */
+    /** Centres on the user once permission has just been granted. */
     fun onLocationPermissionGranted() {
-        if (hadRememberedCamera || hasExplicitTarget) return
-        viewModelScope.launch { centreOnUserIfPermitted() }
+        viewModelScope.launch { centreOnUser() }
     }
 
     /**
@@ -578,10 +575,24 @@ class MapViewModel(
         }
     }
 
-    private suspend fun centreOnUserIfPermitted() {
+    /**
+     * Moves the map to the user, refining once a fresh fix arrives.
+     *
+     * A cached fix can be old and some distance away, so it is treated as a
+     * first approximation to show something immediately rather than as the
+     * answer.
+     */
+    private suspend fun centreOnUser() {
         if (hasExplicitTarget) return
-        val position = locationProvider.lastKnown() ?: return
-        _state.update { it.copy(moveCameraTo = position) }
+        val cached = locationProvider.lastKnown()
+        if (cached != null) {
+            _state.update { it.copy(moveCameraTo = cached) }
+        }
+        val fresh = locationProvider.current() ?: return
+        if (hasExplicitTarget) return
+        if (cached == null || fresh.isFurtherThanAStopFrom(cached)) {
+            _state.update { it.copy(moveCameraTo = fresh) }
+        }
     }
 
     /** Creates [MapViewModel] instances with their dependencies. */

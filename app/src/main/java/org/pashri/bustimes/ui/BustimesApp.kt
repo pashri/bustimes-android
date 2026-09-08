@@ -12,6 +12,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -38,8 +39,29 @@ private object Routes {
     fun timetable(serviceId: Long): String = "timetable/$serviceId"
 }
 
-/** Height of the collapsed sheet: enough for line, destination and lateness. */
-private val PEEK_HEIGHT = 132.dp
+/** Collapsed height for a journey: line, destination and how it is running. */
+private val JOURNEY_PEEK_HEIGHT = 132.dp
+
+/**
+ * Collapsed height for a stop.
+ *
+ * A departure board is only useful if some departures are actually on screen,
+ * so this is tall enough for the stop name plus roughly the next three, rather
+ * than the name alone.
+ */
+private val STOP_PEEK_HEIGHT = 320.dp
+
+/**
+ * The collapsed height for whatever is selected.
+ *
+ * @param selection what the sheet is showing.
+ * @return the peek height, or zero when the sheet should be hidden.
+ */
+private fun peekHeightFor(selection: SelectionState): Dp = when (selection) {
+    SelectionState.None -> 0.dp
+    is SelectionState.Journey -> JOURNEY_PEEK_HEIGHT
+    is SelectionState.Stop -> STOP_PEEK_HEIGHT
+}
 
 /**
  * Root of the app's UI.
@@ -142,7 +164,7 @@ private fun MapDestination(
 
     BottomSheetScaffold(
         scaffoldState = scaffoldState,
-        sheetPeekHeight = if (state.hasSelection) PEEK_HEIGHT else 0.dp,
+        sheetPeekHeight = peekHeightFor(selection),
         sheetContent = {
             SelectionContent(
                 selection = selection,
@@ -158,7 +180,7 @@ private fun MapDestination(
             darkTheme = darkTheme,
             // Shifts the camera's notion of centre up by the collapsed sheet,
             // so a selected bus is never left underneath it.
-            bottomInset = if (state.hasSelection) PEEK_HEIGHT else 0.dp,
+            bottomInset = peekHeightFor(selection),
             onCameraIdle = viewModel::onCameraIdle,
             onVehicleTapped = viewModel::onVehicleSelected,
             onStopTapped = viewModel::onStopSelected,

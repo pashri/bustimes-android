@@ -53,6 +53,23 @@ sealed interface SelectionState {
             get() = trip?.headsign ?: vehicle?.destination
 
         /**
+         * The name of the stop this bus is heading for.
+         *
+         * The vehicle feed gives `next_stop` as an ATCO code, which is no use
+         * to a reader. The trip's own calling points are already loaded, so
+         * the code is resolved against them and only shown raw if it is not
+         * one of them.
+         */
+        val nextStopName: String?
+            get() {
+                val code = vehicle?.progress?.nextStop ?: return null
+                val named = trip?.times
+                    ?.firstOrNull { it.stop.atcoCode == code }
+                    ?.stop?.name
+                return named?.takeIf { it.isNotBlank() } ?: code
+            }
+
+        /**
          * True when no vehicle is reporting against this journey.
          *
          * Not an error: outside London and the largest operators most

@@ -117,13 +117,21 @@ object MapLayers {
             // than displacing the whole glyph away from it.
             iconAnchor(Property.ICON_ANCHOR_CENTER),
             // Scaled with zoom to stay proportional to the body circle, which
-            // is itself zoom-scaled.
+            // is itself zoom-scaled, and scaled up again when selected so the
+            // arrow clears the larger selected circle instead of vanishing
+            // underneath it.
             iconSize(
                 Expression.interpolate(
                     Expression.linear(),
                     Expression.zoom(),
-                    Expression.stop(RADIUS_MIN_ZOOM, literal(MIN_ICON_SCALE)),
-                    Expression.stop(RADIUS_MAX_ZOOM, literal(MAX_ICON_SCALE)),
+                    Expression.stop(
+                        RADIUS_MIN_ZOOM,
+                        selectedOr(MIN_ICON_SCALE * SELECTED_ICON_FACTOR, MIN_ICON_SCALE),
+                    ),
+                    Expression.stop(
+                        RADIUS_MAX_ZOOM,
+                        selectedOr(MAX_ICON_SCALE * SELECTED_ICON_FACTOR, MAX_ICON_SCALE),
+                    ),
                 ),
             ),
         )
@@ -216,6 +224,15 @@ object MapLayers {
     private const val RADIUS_MAX_ZOOM = 16
     private const val MIN_ICON_SCALE = 0.45f
     private const val MAX_ICON_SCALE = 1.0f
+
+    /**
+     * How much bigger the arrow is drawn for the selected bus.
+     *
+     * The selected body circle grows from 13 px to 17 px, which reaches past
+     * where the arrow orbits, so without this the direction indicator is
+     * hidden on exactly the bus whose direction is being looked at.
+     */
+    private const val SELECTED_ICON_FACTOR = 1.6f
     private const val STROKE = 2.0f
     private const val SELECTED_STROKE = 3.5f
 }
