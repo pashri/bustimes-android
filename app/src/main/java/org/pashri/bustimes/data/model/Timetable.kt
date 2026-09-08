@@ -23,12 +23,23 @@ data class TimetableGrouping(
     val destination: String? get() = rows.lastOrNull()?.stopName
 
     /**
-     * The journeys, transposed out of the stop-major CSV.
+     * The journeys, transposed out of the stop-major CSV and put in time order.
      *
      * The CSV is a grid of stops down and journeys across, but a phone reads
      * far better as a list of journeys, so this flips it.
+     *
+     * Column order follows the printed timetable, which groups journeys by
+     * stopping pattern rather than by time, so a 05:40 can sit after a 05:45.
+     * A list read top to bottom has to be chronological or scanning it for the
+     * next departure does not work.
+     *
+     * @return the journeys, earliest departure first.
      */
-    fun journeys(): List<TimetableJourney> = (0 until columnCount).map { column ->
+    fun journeys(): List<TimetableJourney> = rawJourneys()
+        .sortedBy { it.departureTime?.minutesSinceMidnight ?: Int.MAX_VALUE }
+
+    /** The journeys in the CSV's own column order. */
+    fun rawJourneys(): List<TimetableJourney> = (0 until columnCount).map { column ->
         TimetableJourney(
             lineName = lineNames[column],
             calls = rows.mapNotNull { row ->

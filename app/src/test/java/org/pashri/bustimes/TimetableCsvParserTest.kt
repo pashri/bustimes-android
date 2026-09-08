@@ -132,6 +132,28 @@ class TimetableCsvParserTest {
         }
     }
 
+    @Test
+    fun `journeys are returned in departure order`() {
+        val timetable = TimetableCsvParser.parse(fixture("timetable_8092.csv"))
+
+        for (grouping in timetable.groupings) {
+            val departures = grouping.journeys()
+                .mapNotNull { it.departureTime?.minutesSinceMidnight }
+            // CSV column order groups journeys by stopping pattern, not time,
+            // so a list rendered in column order jumps back and forth.
+            assertEquals(departures.sorted(), departures)
+        }
+    }
+
+    @Test
+    fun `raw journeys keep the printed timetable's column order`() {
+        val timetable = TimetableCsvParser.parse(fixture("timetable_80370.csv"))
+        val grouping = timetable.groupings.first()
+
+        assertEquals(grouping.columnCount, grouping.rawJourneys().size)
+        assertEquals(grouping.rawJourneys().size, grouping.journeys().size)
+    }
+
     @Test(expected = TimetableParseException::class)
     fun `an empty csv throws`() {
         TimetableCsvParser.parse("")

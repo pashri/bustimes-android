@@ -6,6 +6,7 @@ import org.pashri.bustimes.data.net.buildHttpClient
 import org.pashri.bustimes.data.prefs.CameraStore
 import org.pashri.bustimes.data.repo.BustimesRepository
 import org.pashri.bustimes.ui.map.MapViewModel
+import org.pashri.bustimes.ui.timetable.TimetableViewModel
 
 /**
  * Manually constructed dependencies.
@@ -28,4 +29,13 @@ class AppContainer(context: Context) {
 
     /** Builds the map screen's view model. */
     val mapViewModelFactory = MapViewModel.Factory(repository, cameraStore, locationProvider)
+
+    /**
+     * Builds the timetable screen's view model.
+     *
+     * @param serviceId the service whose timetable to load.
+     * @return a factory bound to that service.
+     */
+    fun timetableViewModelFactory(serviceId: Long): TimetableViewModel.Factory =
+        TimetableViewModel.Factory(repository, serviceId)
 }
