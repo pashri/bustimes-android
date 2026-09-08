@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Bustimes</string>
+    <string name="locate">Show my location</string>
+    <string name="zoom_in_for_buses">Zoom in to see buses</string>
+    <string name="zoom_in_for_stops">Zoom in to see stops</string>
+    <string name="departures_unreadable">Couldn\'t read the departure board</string>
+    <string name="retry">Retry</string>
+    <string name="offline_banner">Offline — showing saved data</string>
+</resources>
