@@ -102,6 +102,27 @@ data class TripPage(
     val results: List<Trip> = emptyList(),
 )
 
+/** A page of `/api/vehiclejourneys/`. */
+@Serializable
+data class VehicleJourneyPage(
+    val results: List<VehicleJourneySummary> = emptyList(),
+)
+
+/**
+ * A tracked journey.
+ *
+ * A departure board links a tracked departure by journey id rather than trip
+ * id, so this is the only way to get from a board row to a schedule. The trip
+ * is not always matched upstream, in which case there is nothing to open.
+ */
+@Serializable
+data class VehicleJourneySummary(
+    val id: Long,
+    @SerialName("trip_id") val tripId: Long? = null,
+    @SerialName("route_name") val routeName: String? = null,
+    val destination: String? = null,
+)
+
 /** A page of `/api/services/?slug__in=`. */
 @Serializable
 data class ServicePage(

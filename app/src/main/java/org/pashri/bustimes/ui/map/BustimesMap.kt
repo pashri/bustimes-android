@@ -29,6 +29,7 @@ import org.maplibre.android.location.modes.RenderMode
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.pashri.bustimes.data.net.BoundingBox
@@ -272,8 +273,15 @@ private class MapController(private val density: Float) {
             pendingDecorations = decorations
             return
         }
-        source(style, MapLayers.SOURCE_STOPS)
-            ?.setGeoJson(MapGeoJson.stops(decorations.stops, decorations.selectedStopAtco))
+        source(style, MapLayers.SOURCE_STOPS)?.setGeoJson(
+            MapGeoJson.stops(
+                stops = decorations.stops,
+                selectedAtco = decorations.selectedStopAtco,
+                dimmed = decorations.focusedServiceId != null,
+            ),
+        )
+        source(style, MapLayers.SOURCE_SIBLING_ROUTES)
+            ?.setGeoJson(MapGeoJson.siblingRoutes(decorations.siblingRoutes))
         source(style, MapLayers.SOURCE_ROUTE)
             ?.setGeoJson(MapGeoJson.routeLines(decorations.routeLegs))
         source(style, MapLayers.SOURCE_ROUTE_STOPS)
@@ -331,6 +339,7 @@ private class MapController(private val density: Float) {
                 vehicles = decorations.vehicles,
                 selectedId = decorations.selectedVehicleId,
                 positions = positions,
+                dimOtherServices = decorations.focusedServiceId,
             ),
         )
     }
@@ -400,8 +409,11 @@ private class MapController(private val density: Float) {
 
     /** Order matters: route under stops, stops under buses. */
     private fun addLayers(style: Style) {
+        style.addLayer(MapLayers.siblingRoutes())
         style.addLayer(MapLayers.routeCasing())
         style.addLayer(MapLayers.route())
+        style.addLayer(MapLayers.routeCasingDashed())
+        style.addLayer(MapLayers.routeDashed())
         style.addLayer(MapLayers.stops())
         style.addLayer(MapLayers.routeStops())
         style.addLayer(MapLayers.vehicleHeadings())
@@ -418,14 +430,32 @@ private class MapController(private val density: Float) {
      */
     private fun applyRouteStyle(style: Style, decorations: MapDecorations) {
         val opacity = if (decorations.routeDimmed) DIMMED_OPACITY else 1.0f
-        val dashes = if (decorations.routeIsApproximate) MapLayers.dashedRoute() else null
-        style.getLayer(MapLayers.LAYER_ROUTE)?.setProperties(
-            PropertyFactory.lineOpacity(opacity),
-            PropertyFactory.lineDasharray(dashes ?: SOLID),
+        val dashed = decorations.routeIsApproximate
+        // Whether the route follows roads decides which pair of layers is
+        // visible, rather than a dash pattern being switched on one pair. A
+        // dash array cannot express "solid": the spec reads it as alternating
+        // dash and gap lengths, so the single-element array previously used to
+        // mean solid turned every road-following route into dots.
+        setRouteLayer(style, MapLayers.LAYER_ROUTE, visible = !dashed, opacity = opacity)
+        setRouteLayer(
+            style,
+            MapLayers.LAYER_ROUTE_CASING,
+            visible = !dashed,
+            opacity = opacity * CASING_FACTOR,
         )
-        style.getLayer(MapLayers.LAYER_ROUTE_CASING)?.setProperties(
-            PropertyFactory.lineOpacity(opacity * CASING_FACTOR),
-            PropertyFactory.lineDasharray(dashes?.let { CASING_DASH } ?: SOLID),
+        setRouteLayer(style, MapLayers.LAYER_ROUTE_DASHED, visible = dashed, opacity = opacity)
+        setRouteLayer(
+            style,
+            MapLayers.LAYER_ROUTE_CASING_DASHED,
+            visible = dashed,
+            opacity = opacity * CASING_FACTOR,
+        )
+    }
+
+    private fun setRouteLayer(style: Style, id: String, visible: Boolean, opacity: Float) {
+        style.getLayer(id)?.setProperties(
+            PropertyFactory.visibility(if (visible) Property.VISIBLE else Property.NONE),
+            PropertyFactory.lineOpacity(opacity),
         )
     }
 
@@ -482,12 +512,6 @@ private class MapController(private val density: Float) {
         const val DIMMED_OPACITY = 0.35f
         const val CASING_FACTOR = 0.8f
         const val ROUTE_PADDING_DP = 48f
-
-        /** A single long dash is how the spec expresses an unbroken line. */
-        val SOLID = arrayOf(1f)
-
-        /** Slightly wider gaps, so the white casing does not fill the dashes. */
-        val CASING_DASH = arrayOf(1.4f, 1.6f)
     }
 }
 

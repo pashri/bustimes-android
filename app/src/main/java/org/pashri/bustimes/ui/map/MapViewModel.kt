@@ -81,6 +81,15 @@ class MapViewModel(
      */
     private var pinnedVehicle: Vehicle? = null
 
+    /**
+     * Geometry for trips other buses on the focused service are running.
+     *
+     * Cached by trip id and never invalidated, because a trip's route does
+     * not change while it is running — only the bus's position along it does.
+     */
+    private val siblingLegsByTrip = mutableMapOf<Long, List<List<List<Double>>>>()
+    private var siblingJob: Job? = null
+
     /** The journey to return to when backing out of a stop opened from one. */
     private var previousJourney: SelectionState.Journey? = null
 
@@ -181,6 +190,34 @@ class MapViewModel(
     }
 
     /**
+     * Opens a departure from a stop's board.
+     *
+     * A tracked departure is linked by journey id rather than trip id, so it
+     * needs resolving before there is a schedule to show. At a busy stop every
+     * departure can be tracked, which previously left the whole board inert.
+     *
+     * @param tripId the departure's trip, when it has one.
+     * @param journeyId the departure's journey, when it is tracked.
+     */
+    fun onDepartureSelected(tripId: Long?, journeyId: Long?) {
+        if (tripId != null) {
+            onTripSelected(tripId)
+            return
+        }
+        if (journeyId == null) return
+        viewModelScope.launch {
+            val resolved = try {
+                repository.tripIdForJourney(journeyId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                null
+            }
+            resolved?.let(::onTripSelected)
+        }
+    }
+
+    /**
      * Selects a stop and loads its departure board.
      *
      * Any route already drawn is dimmed rather than removed: the stop was
@@ -231,18 +268,15 @@ class MapViewModel(
         selectionJob?.cancel()
         pinnedJob?.cancel()
         pinnedJob = null
+        siblingJob?.cancel()
+        siblingJob = null
         pinnedVehicle = null
         previousJourney = null
         _state.update { current ->
             current.copy(
                 selection = SelectionState.None,
-                decorations = current.decorations.copy(
+                decorations = current.decorations.withoutSelection().copy(
                     vehicles = bboxVehicles,
-                    selectedVehicleId = null,
-                    selectedStopAtco = null,
-                    routeLegs = emptyList(),
-                    routeStops = emptyList(),
-                    routeDimmed = false,
                 ),
             )
         }
@@ -387,6 +421,57 @@ class MapViewModel(
         }
     }
 
+    /**
+     * Loads and draws the routes of other buses on the same service.
+     *
+     * Each sibling runs a different trip, so its shape needs its own request;
+     * they are cached by trip id since a route does not change. Failures are
+     * silent: sibling lines are context, and losing them costs nothing that
+     * the selected route does not already show.
+     */
+    private fun refreshSiblingRoutes(serviceId: Long, selectedVehicleId: Long?) {
+        siblingJob?.cancel()
+        siblingJob = viewModelScope.launch {
+            val siblings = bboxVehicles.filter { vehicle ->
+                vehicle.serviceId == serviceId &&
+                    vehicle.id != selectedVehicleId &&
+                    vehicle.tripId != null
+            }
+            for (sibling in siblings.take(MAX_SIBLINGS)) {
+                val tripId = sibling.tripId ?: continue
+                val legs = siblingLegsByTrip[tripId] ?: fetchSiblingLegs(tripId) ?: continue
+                siblingLegsByTrip[tripId] = legs
+                addSiblingRoute(serviceId, sibling, legs)
+            }
+        }
+    }
+
+    private suspend fun fetchSiblingLegs(tripId: Long): List<List<List<Double>>>? = try {
+        RouteGeometry.forTimes(repository.trip(tripId).times ?: emptyList()).legs
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        null
+    }
+
+    private fun addSiblingRoute(
+        serviceId: Long,
+        sibling: Vehicle,
+        legs: List<List<List<Double>>>,
+    ) {
+        if (legs.isEmpty()) return
+        _state.update { current ->
+            if (current.decorations.focusedServiceId != serviceId) return@update current
+            val route = SiblingRoute(
+                vehicleId = sibling.id,
+                legs = legs,
+                colour = MapGeoJson.liveryColour(sibling),
+            )
+            val kept = current.decorations.siblingRoutes.filterNot { it.vehicleId == route.vehicleId }
+            current.copy(decorations = current.decorations.copy(siblingRoutes = kept + route))
+        }
+    }
+
     private fun applyTrip(tripId: Long, trip: Trip, frameRoute: Boolean) {
         val times = trip.times ?: emptyList()
         val geometry = RouteGeometry.forTimes(times)
@@ -402,8 +487,12 @@ class MapViewModel(
                     routeLegs = geometry.legs,
                     routeIsApproximate = geometry.approximate,
                     routeStops = times,
+                    focusedServiceId = trip.service?.id,
                 ),
             )
+        }
+        trip.service?.id?.let { serviceId ->
+            refreshSiblingRoutes(serviceId, _state.value.decorations.selectedVehicleId)
         }
     }
 
@@ -612,6 +701,16 @@ class MapViewModel(
         if (cached == null || fresh.isFurtherThanAStopFrom(cached)) {
             _state.update { it.copy(moveCameraTo = fresh) }
         }
+    }
+
+    private companion object {
+        /**
+         * How many other buses' routes to draw.
+         *
+         * Each costs a request, and a corridor with more than a handful of
+         * lines on it stops being readable anyway.
+         */
+        const val MAX_SIBLINGS = 6
     }
 
     /** Creates [MapViewModel] instances with their dependencies. */

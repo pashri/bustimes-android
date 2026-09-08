@@ -14,6 +14,7 @@ import org.pashri.bustimes.data.model.Timetable
 import org.pashri.bustimes.data.model.Trip
 import org.pashri.bustimes.data.model.TripPage
 import org.pashri.bustimes.data.model.Vehicle
+import org.pashri.bustimes.data.model.VehicleJourneyPage
 import org.pashri.bustimes.data.net.BoundingBox
 import org.pashri.bustimes.data.net.Bustimes
 import org.pashri.bustimes.data.parse.DeparturesParser
@@ -103,6 +104,22 @@ class BustimesRepository(
         }
         return trips
     }
+
+    /**
+     * Finds the trip behind a tracked journey.
+     *
+     * A departure board links tracked departures by journey id and untracked
+     * ones by trip id, so opening a live departure needs this hop. At a busy
+     * stop every row can be tracked, which without it leaves the whole board
+     * inert.
+     *
+     * @param journeyId the journey from a departure board link.
+     * @return the trip id, or null when upstream has not matched one.
+     */
+    suspend fun tripIdForJourney(journeyId: Long): Long? =
+        get(Bustimes.vehicleJourney(journeyId)) { body ->
+            json.decodeFromString<VehicleJourneyPage>(body).results.firstOrNull()?.tripId
+        }
 
     /**
      * A stop's departure board.

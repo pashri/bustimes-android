@@ -40,6 +40,15 @@ object MapGeoJson {
     const val PROPERTY_SELECTED = "selected"
 
     /**
+     * Feature property flagging a feature to be played down.
+     *
+     * Set on everything that is not part of the selected service, so a route
+     * and its calling points can be read against a quiet background rather
+     * than competing with every other bus and stop on screen.
+     */
+    const val PROPERTY_DIMMED = "dimmed"
+
+    /**
      * Builds the vehicle layer's source data.
      *
      * @param vehicles the vehicles to draw.
@@ -47,12 +56,15 @@ object MapGeoJson {
      * @param positions overrides a vehicle's drawn position by id, used to
      *   animate between two reported fixes. Vehicles absent from the map are
      *   drawn where they were reported.
+     * @param dimOtherServices when set, every vehicle not running this service
+     *   is flagged to be played down.
      * @return a collection of point features, one per vehicle.
      */
     fun vehicles(
         vehicles: List<Vehicle>,
         selectedId: Long?,
         positions: Map<Long, DoubleArray> = emptyMap(),
+        dimOtherServices: Long? = null,
     ): FeatureCollection {
         val features = vehicles.map { vehicle ->
             val drawn = positions[vehicle.id]
@@ -62,6 +74,10 @@ object MapGeoJson {
                 addProperty(PROPERTY_BEARING, vehicle.heading ?: 0.0)
                 addProperty(PROPERTY_COLOUR, liveryColour(vehicle))
                 addProperty(PROPERTY_SELECTED, vehicle.id == selectedId)
+                addProperty(
+                    PROPERTY_DIMMED,
+                    dimOtherServices != null && vehicle.serviceId != dimOtherServices,
+                )
             }
             Feature.fromGeometry(
                 Point.fromLngLat(
@@ -80,15 +96,22 @@ object MapGeoJson {
      *
      * @param stops the stops to draw.
      * @param selectedAtco the stop drawn in the selected style, if any.
+     * @param dimmed whether these stops should be played down, because a
+     *   route's own calling points are the ones being read.
      * @return a collection of point features, one per stop.
      */
-    fun stops(stops: List<StopFeature>, selectedAtco: String?): FeatureCollection {
+    fun stops(
+        stops: List<StopFeature>,
+        selectedAtco: String?,
+        dimmed: Boolean = false,
+    ): FeatureCollection {
         val features = stops.map { stop ->
             val properties = JsonObject().apply {
                 addProperty(PROPERTY_ATCO, stop.atcoCode.orEmpty())
                 addProperty(PROPERTY_LABEL, stop.properties.name)
                 addProperty(PROPERTY_BEARING, stop.properties.bearing ?: 0.0)
                 addProperty(PROPERTY_SELECTED, stop.atcoCode != null && stop.atcoCode == selectedAtco)
+                addProperty(PROPERTY_DIMMED, dimmed)
             }
             Feature.fromGeometry(
                 Point.fromLngLat(stop.longitude, stop.latitude),
@@ -142,8 +165,31 @@ object MapGeoJson {
         return FeatureCollection.fromFeatures(features)
     }
 
-    /** An empty collection, used to clear a source without removing its layer. */
-    fun empty(): FeatureCollection = FeatureCollection.fromFeatures(emptyList<Feature>())
+    /**
+     * Builds the lines for other buses on the focused service.
+     *
+     * Each is coloured by its own bus's livery, which for a branded service
+     * is that route's colour, so several buses on one corridor stay tellable
+     * apart from each other and from everything greyed out around them.
+     *
+     * @param routes the sibling routes to draw.
+     * @return one line feature per leg, carrying its colour.
+     */
+    fun siblingRoutes(routes: List<SiblingRoute>): FeatureCollection {
+        val features = routes.flatMap { route ->
+            route.legs.filter { leg -> leg.size >= 2 }.map { leg ->
+                val properties = JsonObject().apply {
+                    addProperty(PROPERTY_COLOUR, route.colour)
+                    addProperty(PROPERTY_VEHICLE_ID, route.vehicleId)
+                }
+                Feature.fromGeometry(
+                    LineString.fromLngLats(leg.map { Point.fromLngLat(it[0], it[1]) }),
+                    properties,
+                )
+            }
+        }
+        return FeatureCollection.fromFeatures(features)
+    }
 
     /**
      * Picks a drawable colour for a vehicle.
@@ -151,13 +197,19 @@ object MapGeoJson {
      * `colour` is a flat livery colour when the operator has one. `css` is a
      * gradient for multi-colour liveries and is only usable when it happens
      * to be a single hex value, matching what the site's own map does.
+     *
+     * @param vehicle the bus to colour.
+     * @return a `#rrggbb` colour.
      */
-    private fun liveryColour(vehicle: Vehicle): String {
+    fun liveryColour(vehicle: Vehicle): String {
         val detail = vehicle.vehicle
         val flat = detail?.colour?.takeIf { it.startsWith("#") && it.length == HEX_LENGTH }
         val css = detail?.css?.takeIf { it.startsWith("#") && it.length == HEX_LENGTH }
         return flat ?: css ?: DEFAULT_COLOUR
     }
+
+    /** An empty collection, used to clear a source without removing its layer. */
+    fun empty(): FeatureCollection = FeatureCollection.fromFeatures(emptyList<Feature>())
 
     private const val HEX_LENGTH = 7
     private const val DEFAULT_COLOUR = "#2E7D32"

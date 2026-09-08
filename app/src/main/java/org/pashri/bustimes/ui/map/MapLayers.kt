@@ -19,7 +19,9 @@ import org.maplibre.android.style.layers.PropertyFactory.iconRotate
 import org.maplibre.android.style.layers.PropertyFactory.iconRotationAlignment
 import org.maplibre.android.style.layers.PropertyFactory.lineCap
 import org.maplibre.android.style.layers.PropertyFactory.lineColor
+import org.maplibre.android.style.layers.PropertyFactory.lineDasharray
 import org.maplibre.android.style.layers.PropertyFactory.lineJoin
+import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
 import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.layers.PropertyFactory.textAllowOverlap
 import org.maplibre.android.style.layers.PropertyFactory.textColor
@@ -45,6 +47,7 @@ object MapLayers {
     const val SOURCE_VEHICLES = "vehicles-source"
     const val SOURCE_STOPS = "stops-source"
     const val SOURCE_ROUTE = "route-source"
+    const val SOURCE_SIBLING_ROUTES = "sibling-routes-source"
     const val SOURCE_ROUTE_STOPS = "route-stops-source"
 
     const val LAYER_VEHICLES = "vehicles-layer"
@@ -53,10 +56,14 @@ object MapLayers {
     const val LAYER_STOPS = "stops-layer"
     const val LAYER_ROUTE = "route-layer"
     const val LAYER_ROUTE_CASING = "route-casing-layer"
+    const val LAYER_ROUTE_DASHED = "route-dashed-layer"
+    const val LAYER_SIBLING_ROUTES = "sibling-routes-layer"
+    const val LAYER_ROUTE_CASING_DASHED = "route-casing-dashed-layer"
     const val LAYER_ROUTE_STOPS = "route-stops-layer"
 
-    /** All four sources, created empty. */
+    /** Every source, created empty. */
     fun sources(): List<GeoJsonSource> = listOf(
+        GeoJsonSource(SOURCE_SIBLING_ROUTES, MapGeoJson.empty()),
         GeoJsonSource(SOURCE_ROUTE, MapGeoJson.empty()),
         GeoJsonSource(SOURCE_ROUTE_STOPS, MapGeoJson.empty()),
         GeoJsonSource(SOURCE_STOPS, MapGeoJson.empty()),
@@ -83,12 +90,47 @@ object MapLayers {
     )
 
     /**
-     * Dash pattern for a line that only joins stops.
+     * The route line for a service with no road geometry.
      *
-     * Applied when a service has no road geometry, so the line reads as the
-     * order of the calling points rather than as the road the bus drives.
+     * A separate layer rather than a dash pattern toggled on the solid one.
+     * "No dashes" cannot be expressed as a dash array: the spec reads the
+     * array as alternating dash and gap lengths, so a single-element array
+     * meant to mean "solid" renders as a dotted line instead. Two layers with
+     * one visible at a time has no such ambiguity.
      */
-    fun dashedRoute(): Array<Float> = arrayOf(DASH_ON, DASH_OFF)
+    fun routeDashed(): LineLayer = LineLayer(LAYER_ROUTE_DASHED, SOURCE_ROUTE).withProperties(
+        lineColor("#1B5E20"),
+        lineWidth(ROUTE_WIDTH),
+        lineCap(Property.LINE_CAP_BUTT),
+        lineJoin(Property.LINE_JOIN_ROUND),
+        lineDasharray(arrayOf(DASH_ON, DASH_OFF)),
+    )
+
+    /** The casing beneath [routeDashed], dashed to match so it does not fill the gaps. */
+    fun routeCasingDashed(): LineLayer =
+        LineLayer(LAYER_ROUTE_CASING_DASHED, SOURCE_ROUTE).withProperties(
+            lineColor("#FFFFFF"),
+            lineWidth(ROUTE_CASING_WIDTH),
+            lineCap(Property.LINE_CAP_BUTT),
+            lineJoin(Property.LINE_JOIN_ROUND),
+            lineDasharray(arrayOf(CASING_DASH_ON, CASING_DASH_OFF)),
+        )
+
+    /**
+     * Routes of the other buses running the focused service.
+     *
+     * Thinner than the selected journey's own line and drawn beneath it, so
+     * the bus that was actually tapped stays unambiguous while its siblings
+     * give the service's shape.
+     */
+    fun siblingRoutes(): LineLayer =
+        LineLayer(LAYER_SIBLING_ROUTES, SOURCE_SIBLING_ROUTES).withProperties(
+            lineColor(get(MapGeoJson.PROPERTY_COLOUR)),
+            lineWidth(SIBLING_WIDTH),
+            lineOpacity(SIBLING_OPACITY),
+            lineCap(Property.LINE_CAP_ROUND),
+            lineJoin(Property.LINE_JOIN_ROUND),
+        )
 
     /** Calling points of the selected route. */
     fun routeStops(): SymbolLayer = SymbolLayer(LAYER_ROUTE_STOPS, SOURCE_ROUTE_STOPS)
@@ -98,12 +140,40 @@ object MapLayers {
             iconIgnorePlacement(true),
         )
 
-    /** Ordinary stops, shown from zoom 14 as bustimes.org does. */
-    fun stops(): SymbolLayer = SymbolLayer(LAYER_STOPS, SOURCE_STOPS)
+    /**
+     * Ordinary stops.
+     *
+     * A circle layer rather than a bitmap symbol so the radius can follow the
+     * zoom and the colour can be data-driven. At the zoom floor a stop-sized
+     * marker would cover a whole street, and a screen holding three hundred
+     * of them turns into a rash; shrinking them lets the floor come down a
+     * level without that happening.
+     */
+    fun stops(): CircleLayer = CircleLayer(LAYER_STOPS, SOURCE_STOPS)
         .withProperties(
-            iconImage(MapIcons.STOP),
-            iconAllowOverlap(true),
-            iconIgnorePlacement(true),
+            circleColor(
+                Expression.switchCase(
+                    eq(get(MapGeoJson.PROPERTY_DIMMED), literal(true)),
+                    literal(DIMMED_GREY),
+                    literal(STOP_COLOUR),
+                ),
+            ),
+            circleRadius(
+                Expression.interpolate(
+                    Expression.linear(),
+                    Expression.zoom(),
+                    Expression.stop(STOP_MIN_ZOOM_STEP, literal(STOP_MIN_RADIUS)),
+                    Expression.stop(STOP_MAX_ZOOM_STEP, literal(STOP_MAX_RADIUS)),
+                ),
+            ),
+            circleStrokeColor("#FFFFFF"),
+            circleStrokeWidth(
+                Expression.switchCase(
+                    eq(get(MapGeoJson.PROPERTY_DIMMED), literal(true)),
+                    literal(0.0f),
+                    literal(STOP_STROKE),
+                ),
+            ),
         )
         .apply { minZoom = MapDefaults.STOPS_MIN_ZOOM.toFloat() }
 
@@ -143,6 +213,7 @@ object MapLayers {
                 ),
             ),
         )
+        .withFilter(notDimmed())
         .apply { minZoom = MapDefaults.VEHICLES_MIN_ZOOM.toFloat() }
 
     /**
@@ -156,7 +227,13 @@ object MapLayers {
      */
     fun vehicles(): CircleLayer = CircleLayer(LAYER_VEHICLES, SOURCE_VEHICLES)
         .withProperties(
-            circleColor(get(MapGeoJson.PROPERTY_COLOUR)),
+            circleColor(
+                Expression.switchCase(
+                    eq(get(MapGeoJson.PROPERTY_DIMMED), literal(true)),
+                    literal(DIMMED_GREY),
+                    get(MapGeoJson.PROPERTY_COLOUR),
+                ),
+            ),
             // A single radius cannot serve every zoom: 11 px covers a few
             // hundred metres of ground at z10, so every bus appears to sit on
             // top of the buildings around it however accurate the fix is.
@@ -189,7 +266,16 @@ object MapLayers {
             textAllowOverlap(true),
             textIgnorePlacement(true),
         )
+        // A line number greyed to the same tone as its circle is an
+        // illegible mark that still draws the eye, so dimmed buses lose
+        // their labels and their arrows entirely rather than keeping
+        // unreadable ones.
+        .withFilter(notDimmed())
         .apply { minZoom = LABEL_MIN_ZOOM }
+
+    /** Matches only features that are not being played down. */
+    private fun notDimmed(): Expression =
+        Expression.not(eq(get(MapGeoJson.PROPERTY_DIMMED), literal(true)))
 
     /**
      * Interpolates the body radius across the zooms vehicles are drawn at,
@@ -221,8 +307,21 @@ object MapLayers {
 
     private const val DASH_ON = 1.6f
     private const val DASH_OFF = 1.4f
+
+    private const val SIBLING_WIDTH = 2.5f
+    private const val SIBLING_OPACITY = 0.85f
     private const val ROUTE_WIDTH = 4.5f
     private const val ROUTE_CASING_WIDTH = 8.0f
+
+    /**
+     * The casing's dashes, in units of its own wider line width.
+     *
+     * Scaled down from the line's pattern because dash lengths multiply by
+     * line width: reusing the same numbers on a wider line would make the
+     * white casing's dashes longer than the green ones they sit under.
+     */
+    private const val CASING_DASH_ON = DASH_ON * ROUTE_WIDTH / ROUTE_CASING_WIDTH
+    private const val CASING_DASH_OFF = DASH_OFF * ROUTE_WIDTH / ROUTE_CASING_WIDTH
     private const val LABEL_SIZE = 11.0f
     private const val LABEL_HALO = 1.6f
     private const val LABEL_MIN_ZOOM = 12.0f
@@ -232,6 +331,15 @@ object MapLayers {
     private const val SELECTED_MAX_RADIUS = 17.0f
     private const val RADIUS_MIN_ZOOM = 10
     private const val RADIUS_MAX_ZOOM = 16
+    /** The single tone everything played down is drawn in. */
+    private const val DIMMED_GREY = "#C9CDD2"
+    private const val STOP_COLOUR = "#5A5A5A"
+    private const val STOP_MIN_RADIUS = 3.5f
+    private const val STOP_MAX_RADIUS = 6.0f
+    private const val STOP_STROKE = 1.5f
+    private const val STOP_MIN_ZOOM_STEP = 13
+    private const val STOP_MAX_ZOOM_STEP = 16
+
     private const val MIN_ICON_SCALE = 0.45f
     private const val MAX_ICON_SCALE = 1.0f
 

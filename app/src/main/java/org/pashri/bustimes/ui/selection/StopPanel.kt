@@ -28,13 +28,14 @@ import org.pashri.bustimes.data.model.Departure
  * would give two different destinations for one row.
  *
  * @param stop the selected stop and its loaded board.
- * @param onDepartureClicked called with a departure's trip id, when it has one.
+ * @param onDepartureClicked called with a departure's trip id and journey id;
+ *   a tracked departure has only the latter and needs resolving.
  * @param modifier layout modifier.
  */
 @Composable
 fun StopPanel(
     stop: SelectionState.Stop,
-    onDepartureClicked: (Long) -> Unit,
+    onDepartureClicked: (Long?, Long?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
@@ -63,7 +64,7 @@ fun StopPanel(
 @Composable
 private fun DepartureList(
     departures: List<Departure>,
-    onDepartureClicked: (Long) -> Unit,
+    onDepartureClicked: (Long?, Long?) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxWidth()) {
         items(departures) { departure ->
@@ -74,12 +75,14 @@ private fun DepartureList(
 }
 
 @Composable
-private fun DepartureRow(departure: Departure, onDepartureClicked: (Long) -> Unit) {
-    val tripId = departure.tripId
+private fun DepartureRow(departure: Departure, onDepartureClicked: (Long?, Long?) -> Unit) {
+    val openable = departure.tripId != null || departure.journeyId != null
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = tripId != null) { if (tripId != null) onDepartureClicked(tripId) }
+            .clickable(enabled = openable) {
+                onDepartureClicked(departure.tripId, departure.journeyId)
+            }
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
