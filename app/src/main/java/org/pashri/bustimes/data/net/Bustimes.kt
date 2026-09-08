@@ -46,6 +46,10 @@ object Bustimes {
     fun tripsForService(serviceId: Long, date: String): String =
         "$BASE_URL/api/trips/?service=$serviceId&date=$date&format=json"
 
+    /** One tracked journey, which is how a departure board links a live departure. */
+    fun vehicleJourney(journeyId: Long): String =
+        "$BASE_URL/api/vehiclejourneys/?id=$journeyId&format=json"
+
     /** A stop's departure board. HTML fragment; there is no JSON equivalent. */
     fun departures(atcoCode: String): String = "$BASE_URL/stops/$atcoCode/departures"
 

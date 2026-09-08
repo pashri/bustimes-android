@@ -32,9 +32,53 @@ data class MapDecorations(
     /** Dimmed when a stop on the route is selected, so context is kept. */
     val routeDimmed: Boolean = false,
     val selectedVehicleId: Long? = null,
+    /**
+     * The service whose buses keep their colours, if any.
+     *
+     * Everything not running it is drawn in one flat grey, so a route and its
+     * calling points can be read without competing with every other bus and
+     * stop on screen. Null means nothing is played down.
+     */
+    val focusedServiceId: Long? = null,
+    /**
+     * Routes of the other buses running the focused service.
+     *
+     * Each carries its own colour, taken from the bus's livery — the colour
+     * of its circle — because bustimes exposes no route colour in any JSON.
+     */
+    val siblingRoutes: List<SiblingRoute> = emptyList(),
     val selectedStopAtco: String? = null,
     /** Stops of the selected trip, drawn larger than surrounding stops. */
     val routeStops: List<StopTime> = emptyList(),
+) {
+    /**
+     * Everything drawn for a selection, removed.
+     *
+     * Enumerating the selection-related fields at each call site meant one of
+     * them could be — and was — forgotten: clearing a selection left the
+     * focused service behind, so every other bus stayed greyed out with
+     * nothing selected to explain it. Keeping the reset here means a new
+     * selection field is cleared by construction.
+     *
+     * @return the same stops and vehicles, with no selection drawn.
+     */
+    fun withoutSelection(): MapDecorations = MapDecorations(
+        stops = stops,
+        vehicles = vehicles,
+    )
+}
+
+/**
+ * Another bus's route on the focused service.
+ *
+ * @property vehicleId the bus this route belongs to.
+ * @property legs `[lon, lat]` pairs, one list per leg.
+ * @property colour the line's colour as `#rrggbb`.
+ */
+data class SiblingRoute(
+    val vehicleId: Long,
+    val legs: List<List<List<Double>>>,
+    val colour: String,
 )
 
 /** The map camera, persisted so the app reopens where it was left. */

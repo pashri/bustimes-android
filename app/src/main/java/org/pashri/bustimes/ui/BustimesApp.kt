@@ -170,6 +170,17 @@ private fun MapDestination(
         }
     }
 
+    // Dragging the sheet below peek puts it in Hidden, which the sheet does
+    // without telling anyone. Treated as a dismissal, because otherwise the
+    // selection stays alive with no sheet to show it: the route and the
+    // dimming would sit on the map with nothing explaining them and no way
+    // to get the panel back.
+    LaunchedEffect(sheetState.currentValue, selection) {
+        if (sheetState.currentValue == SheetValue.Hidden && selection != SelectionState.None) {
+            viewModel.clearSelection()
+        }
+    }
+
     // Back means one step out: collapse an expanded sheet, then drop the
     // selection, then let the system handle it.
     BackHandler(enabled = state.hasSelection) {
@@ -187,7 +198,7 @@ private fun MapDestination(
             SelectionContent(
                 selection = selection,
                 onStopClicked = viewModel::onStopSelected,
-                onTripClicked = viewModel::onTripSelected,
+                onDepartureClicked = viewModel::onDepartureSelected,
                 onTimetableRequested = onTimetableRequested,
                 onHeaderClicked = viewModel::onRecentreRequested,
             )
@@ -218,7 +229,7 @@ private fun MapDestination(
 private fun SelectionContent(
     selection: SelectionState,
     onStopClicked: (String) -> Unit,
-    onTripClicked: (Long) -> Unit,
+    onDepartureClicked: (Long?, Long?) -> Unit,
     onTimetableRequested: (Long) -> Unit,
     onHeaderClicked: () -> Unit,
 ) {
@@ -232,7 +243,7 @@ private fun SelectionContent(
         )
         is SelectionState.Stop -> StopPanel(
             stop = selection,
-            onDepartureClicked = onTripClicked,
+            onDepartureClicked = onDepartureClicked,
         )
     }
 }

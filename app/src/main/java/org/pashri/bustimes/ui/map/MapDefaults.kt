@@ -11,8 +11,15 @@ package org.pashri.bustimes.ui.map
  */
 object MapDefaults {
 
-    /** Below this zoom, stops are not fetched or drawn. */
-    const val STOPS_MIN_ZOOM = 14.0
+    /**
+     * Below this zoom, stops are not fetched or drawn.
+     *
+     * One level below bustimes.org's own floor of 14. A phone viewport at 13
+     * holds about three hundred stops for 89 KB, which the hour-long cache on
+     * the endpoint absorbs; the markers shrink with zoom so that many dots
+     * still read as texture rather than clutter.
+     */
+    const val STOPS_MIN_ZOOM = 13.0
 
     /** Below this zoom, vehicles are not fetched or drawn. */
     const val VEHICLES_MIN_ZOOM = 6.0
