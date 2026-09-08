@@ -9,3 +9,8 @@
 .cxx
 local.properties
 app/build/
+
+# Local signing config and keystores — never committed
+keystore.properties
+*.jks
+*.keystore

@@ -43,6 +43,18 @@ or export, a test fails instead of the app silently going blank.
 - Corrects for device clock skew using the server's `Date` header, so
   delays are computed against the server's clock
 
+## Installing
+
+Download the APK from the [latest
+release](https://github.com/pashri/bustimes-android/releases/latest) and
+open it on your phone. Android will ask you to allow installing from an
+unknown source, because the app is signed with a personal key rather than
+distributed through Play.
+
+It asks for approximate location only, and just to decide where to point
+the map. Location is never used in the background: polling stops the
+moment the app leaves the foreground.
+
 ## Building
 
 Needs JDK 17 and an Android SDK with platform 35.
@@ -51,6 +63,11 @@ Needs JDK 17 and an Android SDK with platform 35.
 ./gradlew :app:testDebugUnitTest   # parser tests, against recorded fixtures
 ./gradlew :app:assembleDebug
 ```
+
+Release builds are signed only if a `keystore.properties` is present in
+the project root, naming a keystore, its passwords and a key alias.
+Without one the project still builds; the release variant is simply left
+unsigned.
 
 ## Basemap
 
