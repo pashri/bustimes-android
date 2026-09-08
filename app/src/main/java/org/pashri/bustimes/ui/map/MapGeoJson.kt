@@ -44,10 +44,18 @@ object MapGeoJson {
      *
      * @param vehicles the vehicles to draw.
      * @param selectedId the vehicle drawn in the selected style, if any.
+     * @param positions overrides a vehicle's drawn position by id, used to
+     *   animate between two reported fixes. Vehicles absent from the map are
+     *   drawn where they were reported.
      * @return a collection of point features, one per vehicle.
      */
-    fun vehicles(vehicles: List<Vehicle>, selectedId: Long?): FeatureCollection {
+    fun vehicles(
+        vehicles: List<Vehicle>,
+        selectedId: Long?,
+        positions: Map<Long, DoubleArray> = emptyMap(),
+    ): FeatureCollection {
         val features = vehicles.map { vehicle ->
+            val drawn = positions[vehicle.id]
             val properties = JsonObject().apply {
                 addProperty(PROPERTY_VEHICLE_ID, vehicle.id)
                 addProperty(PROPERTY_LABEL, vehicle.service?.lineName.orEmpty())
@@ -56,7 +64,10 @@ object MapGeoJson {
                 addProperty(PROPERTY_SELECTED, vehicle.id == selectedId)
             }
             Feature.fromGeometry(
-                Point.fromLngLat(vehicle.longitude, vehicle.latitude),
+                Point.fromLngLat(
+                    drawn?.get(0) ?: vehicle.longitude,
+                    drawn?.get(1) ?: vehicle.latitude,
+                ),
                 properties,
                 vehicle.id.toString(),
             )

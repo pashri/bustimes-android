@@ -17,18 +17,23 @@ sealed interface SelectionState {
     data object None : SelectionState
 
     /**
-     * A bus, with its schedule.
+     * A journey, with its schedule.
      *
-     * @property vehicleId the tracked vehicle.
+     * Keyed by trip rather than by vehicle. A departure board row or a
+     * timetable journey gives a trip id and no vehicle at all — most
+     * departures are not tracked — so a vehicle-keyed selection could only
+     * ever represent buses already visible on the map.
+     *
+     * @property tripId the journey being shown.
      * @property trip the schedule, once loaded.
-     * @property vehicle the vehicle's live detail, which carries delay and
-     *   progress; the bounding-box poll omits both, so this needs its own
-     *   request.
-     * @property loading true while either request is outstanding.
+     * @property vehicle the vehicle running it, when one is tracked. Carries
+     *   delay and progress, which the bounding-box poll omits, so it needs its
+     *   own request.
+     * @property loading true while the schedule is outstanding.
      * @property failed true when the schedule could not be fetched.
      */
-    data class Bus(
-        val vehicleId: Long,
+    data class Journey(
+        val tripId: Long,
         val trip: Trip? = null,
         val vehicle: Vehicle? = null,
         val loading: Boolean = true,
@@ -42,13 +47,26 @@ sealed interface SelectionState {
         /** The numeric service id, needed to open the full timetable. */
         val serviceId: Long?
             get() = trip?.service?.id ?: vehicle?.serviceId
+
+        /** Where the journey is going. */
+        val headsign: String?
+            get() = trip?.headsign ?: vehicle?.destination
+
+        /**
+         * True when no vehicle is reporting against this journey.
+         *
+         * Not an error: outside London and the largest operators most
+         * journeys are never tracked, so the schedule alone is the norm.
+         */
+        val untracked: Boolean
+            get() = !loading && vehicle == null
     }
 
     /**
      * A stop, with its departure board.
      *
      * @property atcoCode the stop.
-     * @property name the stop's name, when known from the map data.
+     * @property name the stop's name, when known.
      * @property board the parsed board, once loaded.
      * @property loading true while the board is being fetched.
      * @property unreadable true when the board could not be parsed, which

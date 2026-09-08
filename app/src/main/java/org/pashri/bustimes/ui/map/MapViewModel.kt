@@ -11,14 +11,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import org.pashri.bustimes.data.location.CoarseLocationProvider
-import org.pashri.bustimes.data.location.CoarsePosition
+import org.pashri.bustimes.data.location.LocationProvider
+import org.pashri.bustimes.data.location.DevicePosition
 import org.pashri.bustimes.data.model.StopFeature
 import org.pashri.bustimes.data.model.Trip
 import org.pashri.bustimes.data.model.Vehicle
 import org.pashri.bustimes.data.net.BoundingBox
-import org.pashri.bustimes.data.prefs.CameraStore
 import org.pashri.bustimes.data.parse.DeparturesParseException
+import org.pashri.bustimes.data.prefs.CameraStore
 import org.pashri.bustimes.data.repo.BustimesRepository
 import org.pashri.bustimes.ui.selection.SelectionState
 
@@ -29,11 +29,16 @@ data class MapUiState(
     val selection: SelectionState = SelectionState.None,
     val loadingVehicles: Boolean = false,
     val offline: Boolean = false,
-    /** Set when the user asks to be located and a position is found. */
-    val moveCameraTo: CoarsePosition? = null,
+    /** Set when something asks the camera to move to a position. */
+    val moveCameraTo: DevicePosition? = null,
+    /** Set when the camera should frame the whole selected route. */
+    val fitRoute: Boolean = false,
 ) {
     /** True when the zoom is too low to fetch vehicles, so a hint is shown. */
     val zoomedOutForVehicles: Boolean get() = camera != null && !camera.showsVehicles
+
+    /** True when a journey or stop is selected, so the sheet has content. */
+    val hasSelection: Boolean get() = selection != SelectionState.None
 }
 
 /**
@@ -47,7 +52,7 @@ data class MapUiState(
 class MapViewModel(
     private val repository: BustimesRepository,
     private val cameraStore: CameraStore,
-    private val locationProvider: CoarseLocationProvider,
+    private val locationProvider: LocationProvider,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MapUiState())
@@ -60,10 +65,23 @@ class MapViewModel(
     private var pollJob: Job? = null
     private var stopsJob: Job? = null
     private var selectionJob: Job? = null
-
-    /** The last loaded trip, kept so going back to a bus need not refetch it. */
-    private var lastTrip: Trip? = null
+    private var pinnedJob: Job? = null
     private var fetchedStopsFor: BoundingBox? = null
+
+    /** Bbox vehicles, before the pinned selection is merged in. */
+    private var bboxVehicles: List<Vehicle> = emptyList()
+
+    /**
+     * The selected journey's own vehicle, polled separately.
+     *
+     * It is kept outside [bboxVehicles] and merged on top, so the selected bus
+     * stays on the map when the user pans away from it and its delay stays
+     * current — neither of which the bounding-box poll can provide.
+     */
+    private var pinnedVehicle: Vehicle? = null
+
+    /** The journey to return to when backing out of a stop opened from one. */
+    private var previousJourney: SelectionState.Journey? = null
 
     /**
      * Set once something has explicitly asked for a camera position.
@@ -110,7 +128,13 @@ class MapViewModel(
             return
         }
         val needsFetch = highWaterMark.needsFetch(bounds)
-        startPolling(initialDelayMillis = if (needsFetch) MapDefaults.PAN_DEBOUNCE_MILLIS else MapDefaults.VEHICLE_POLL_MILLIS)
+        startPolling(
+            initialDelayMillis = if (needsFetch) {
+                MapDefaults.PAN_DEBOUNCE_MILLIS
+            } else {
+                MapDefaults.VEHICLE_POLL_MILLIS
+            },
+        )
         if (needsFetch && userGesture) {
             _state.update { it.copy(loadingVehicles = true) }
         }
@@ -122,6 +146,7 @@ class MapViewModel(
         if (camera.showsVehicles) {
             startPolling(initialDelayMillis = 0)
         }
+        restartPinnedPolling()
     }
 
     /**
@@ -133,27 +158,32 @@ class MapViewModel(
      */
     fun onPaused() {
         stopPolling()
+        pinnedJob?.cancel()
+        pinnedJob = null
     }
 
     /**
-     * Selects a bus and loads its schedule and route.
+     * Selects the journey a tapped bus is running.
      *
-     * @param vehicleId the tracked vehicle to select.
+     * @param vehicleId the tracked vehicle that was tapped.
      */
     fun onVehicleSelected(vehicleId: Long) {
-        val vehicle = _state.value.decorations.vehicles.firstOrNull { it.id == vehicleId }
-        _state.update { current ->
-            current.copy(
-                selection = SelectionState.Bus(vehicleId = vehicleId, vehicle = vehicle),
-                decorations = current.decorations.copy(
-                    selectedVehicleId = vehicleId,
-                    selectedStopAtco = null,
-                    routeDimmed = false,
-                ),
-            )
+        val vehicle = drawnVehicles().firstOrNull { it.id == vehicleId }
+        val tripId = vehicle?.tripId
+        if (tripId == null) {
+            // A tracked bus with no trip cannot be resolved to a schedule.
+            return
         }
-        selectionJob?.cancel()
-        selectionJob = viewModelScope.launch { loadTrip(vehicleId, vehicle?.tripId) }
+        selectJourney(tripId = tripId, vehicle = vehicle, frameRoute = false)
+    }
+
+    /**
+     * Selects a journey by trip id, from a departure board or a timetable.
+     *
+     * @param tripId the journey to show.
+     */
+    fun onTripSelected(tripId: Long) {
+        selectJourney(tripId = tripId, vehicle = null, frameRoute = true)
     }
 
     /**
@@ -166,11 +196,10 @@ class MapViewModel(
      * @param atcoCode the stop to select.
      */
     fun onStopSelected(atcoCode: String) {
-        val name = _state.value.decorations.stops
-            .firstOrNull { it.atcoCode == atcoCode }?.properties?.name
+        previousJourney = _state.value.selection as? SelectionState.Journey
         _state.update { current ->
             current.copy(
-                selection = SelectionState.Stop(atcoCode = atcoCode, name = name),
+                selection = SelectionState.Stop(atcoCode = atcoCode, name = stopName(atcoCode)),
                 decorations = current.decorations.copy(
                     selectedStopAtco = atcoCode,
                     routeDimmed = current.decorations.routeLegs.isNotEmpty(),
@@ -179,6 +208,74 @@ class MapViewModel(
         }
         selectionJob?.cancel()
         selectionJob = viewModelScope.launch { loadDepartures(atcoCode) }
+    }
+
+    /**
+     * Clears the current selection, one layer at a time.
+     *
+     * Backing out of a stop that was reached from a journey restores the
+     * journey and un-dims its route, rather than dropping straight to a bare
+     * map and discarding the route the user was following.
+     *
+     * @return true when something was cleared, so back was consumed.
+     */
+    fun onBack(): Boolean {
+        val selection = _state.value.selection
+        if (selection is SelectionState.Stop && previousJourney != null) {
+            restoreJourney()
+            return true
+        }
+        if (selection == SelectionState.None) {
+            return false
+        }
+        clearSelection()
+        return true
+    }
+
+    /** Drops the selection and everything drawn for it. */
+    fun clearSelection() {
+        selectionJob?.cancel()
+        pinnedJob?.cancel()
+        pinnedJob = null
+        pinnedVehicle = null
+        previousJourney = null
+        _state.update { current ->
+            current.copy(
+                selection = SelectionState.None,
+                decorations = current.decorations.copy(
+                    vehicles = bboxVehicles,
+                    selectedVehicleId = null,
+                    selectedStopAtco = null,
+                    routeLegs = emptyList(),
+                    routeStops = emptyList(),
+                    routeDimmed = false,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Recentres on the selected journey.
+     *
+     * Bound to a tap on the sheet header, which is the natural way back to a
+     * bus after panning along its route.
+     */
+    fun onRecentreRequested() {
+        val vehicle = pinnedVehicle ?: (_state.value.selection as? SelectionState.Journey)?.vehicle
+        if (vehicle != null) {
+            _state.update {
+                it.copy(moveCameraTo = DevicePosition(vehicle.latitude, vehicle.longitude))
+            }
+            return
+        }
+        if (_state.value.decorations.routeLegs.isNotEmpty()) {
+            _state.update { it.copy(fitRoute = true) }
+        }
+    }
+
+    /** Acknowledges a route-framing request so it is not repeated. */
+    fun onFitRouteHandled() {
+        _state.update { it.copy(fitRoute = false) }
     }
 
     /**
@@ -200,48 +297,72 @@ class MapViewModel(
         }
     }
 
+    /** Requests a fresh position and asks the map to move there. */
+    fun onLocateRequested() {
+        viewModelScope.launch {
+            val position = locationProvider.lastKnown()
+                ?: locationProvider.current()
+                ?: return@launch
+            hasExplicitTarget = true
+            _state.update { it.copy(moveCameraTo = position) }
+        }
+    }
+
     /**
-     * Clears the current selection.
+     * Called once the user grants location permission.
      *
-     * Going back from a stop that was reached from a bus restores the bus
-     * panel and un-dims its route, rather than dropping to a bare map.
+     * Granting permission is not itself a request to be taken somewhere, so
+     * this only centres the map when there was no remembered position to
+     * honour and nothing else has asked for a specific view.
      */
-    fun onSelectionDismissed() {
+    fun onLocationPermissionGranted() {
+        if (hadRememberedCamera || hasExplicitTarget) return
+        viewModelScope.launch { centreOnUserIfPermitted() }
+    }
+
+    /**
+     * Moves the camera to an arbitrary position.
+     *
+     * Used by the debug launch extras to open the map somewhere specific
+     * without a real location fix, and the natural hook for opening on a
+     * favourite stop once favourites exist.
+     *
+     * @param latitude target latitude in degrees.
+     * @param longitude target longitude in degrees.
+     */
+    fun moveTo(latitude: Double, longitude: Double) {
+        hasExplicitTarget = true
+        _state.update { it.copy(moveCameraTo = DevicePosition(latitude, longitude)) }
+    }
+
+    /** Acknowledges a camera move so it is not repeated. */
+    fun onCameraMoveHandled() {
+        _state.update { it.copy(moveCameraTo = null) }
+    }
+
+    private fun selectJourney(tripId: Long, vehicle: Vehicle?, frameRoute: Boolean) {
+        previousJourney = null
+        pinnedVehicle = vehicle
+        _state.update { current ->
+            current.copy(
+                selection = SelectionState.Journey(tripId = tripId, vehicle = vehicle),
+                decorations = current.decorations.copy(
+                    selectedVehicleId = vehicle?.id,
+                    selectedStopAtco = null,
+                    routeDimmed = false,
+                ),
+            )
+        }
         selectionJob?.cancel()
-        val previous = _state.value.selection
-        val bus = previous as? SelectionState.Stop
-        if (bus != null && _state.value.decorations.routeLegs.isNotEmpty()) {
-            restoreBusSelection()
-            return
-        }
-        _state.update { current ->
-            current.copy(
-                selection = SelectionState.None,
-                decorations = current.decorations.copy(
-                    selectedVehicleId = null,
-                    selectedStopAtco = null,
-                    routeLegs = emptyList(),
-                    routeStops = emptyList(),
-                    routeDimmed = false,
-                ),
-            )
-        }
+        selectionJob = viewModelScope.launch { loadTrip(tripId, frameRoute) }
     }
 
-    private fun restoreBusSelection() {
-        val vehicleId = _state.value.decorations.selectedVehicleId
-        if (vehicleId == null) {
-            _state.update { it.copy(selection = SelectionState.None) }
-            return
-        }
+    private fun restoreJourney() {
+        val journey = previousJourney ?: return
+        previousJourney = null
         _state.update { current ->
             current.copy(
-                selection = SelectionState.Bus(
-                    vehicleId = vehicleId,
-                    trip = lastTrip,
-                    vehicle = current.decorations.vehicles.firstOrNull { it.id == vehicleId },
-                    loading = false,
-                ),
+                selection = journey.copy(vehicle = pinnedVehicle ?: journey.vehicle),
                 decorations = current.decorations.copy(
                     selectedStopAtco = null,
                     routeDimmed = false,
@@ -250,34 +371,26 @@ class MapViewModel(
         }
     }
 
-    private suspend fun loadTrip(vehicleId: Long, knownTripId: Long?) {
-        val tripId = knownTripId ?: resolveTripId(vehicleId)
-        if (tripId == null) {
-            markBusFailed(vehicleId)
-            return
-        }
+    private suspend fun loadTrip(tripId: Long, frameRoute: Boolean) {
         try {
             val trip = repository.trip(tripId)
-            lastTrip = trip
-            applyTrip(vehicleId, trip)
-            refreshVehicleDetail(vehicleId, trip)
+            applyTrip(tripId, trip, frameRoute)
+            restartPinnedPolling()
         } catch (error: IOException) {
-            markBusFailed(vehicleId)
+            markJourneyFailed(tripId)
         }
     }
 
-    private suspend fun resolveTripId(vehicleId: Long): Long? =
-        _state.value.decorations.vehicles.firstOrNull { it.id == vehicleId }?.tripId
-
-    private fun applyTrip(vehicleId: Long, trip: Trip) {
+    private fun applyTrip(tripId: Long, trip: Trip, frameRoute: Boolean) {
         val times = trip.times ?: emptyList()
         _state.update { current ->
             val selection = current.selection
-            if (selection !is SelectionState.Bus || selection.vehicleId != vehicleId) {
+            if (selection !is SelectionState.Journey || selection.tripId != tripId) {
                 return@update current
             }
             current.copy(
                 selection = selection.copy(trip = trip, loading = false),
+                fitRoute = current.fitRoute || frameRoute,
                 decorations = current.decorations.copy(
                     routeLegs = times.mapNotNull { it.track },
                     routeStops = times,
@@ -286,36 +399,54 @@ class MapViewModel(
         }
     }
 
-    /**
-     * Fetches the selected vehicle's own record, for delay and progress.
-     *
-     * The bounding-box poll omits both fields, so they are only available from
-     * the filtered form of the endpoint.
-     */
-    private suspend fun refreshVehicleDetail(vehicleId: Long, trip: Trip) {
-        val serviceId = trip.service?.id ?: return
-        try {
-            val detail = repository.vehicleForTrip(serviceId = serviceId, tripId = trip.id)
-                ?: return
-            _state.update { current ->
-                val selection = current.selection
-                if (selection !is SelectionState.Bus || selection.vehicleId != vehicleId) {
-                    return@update current
-                }
-                current.copy(selection = selection.copy(vehicle = detail))
-            }
-        } catch (error: IOException) {
-            // Delay and progress are enrichment; the schedule alone is useful.
-        }
-    }
-
-    private fun markBusFailed(vehicleId: Long) {
+    private fun markJourneyFailed(tripId: Long) {
         _state.update { current ->
             val selection = current.selection
-            if (selection !is SelectionState.Bus || selection.vehicleId != vehicleId) {
+            if (selection !is SelectionState.Journey || selection.tripId != tripId) {
                 return@update current
             }
             current.copy(selection = selection.copy(loading = false, failed = true))
+        }
+    }
+
+    /**
+     * Keeps the selected journey's vehicle fresh.
+     *
+     * `delay` and `progress` exist only in the filtered form of the vehicles
+     * endpoint, so without this the sheet's lateness would be whatever it was
+     * at the moment of selection and would never move again.
+     */
+    private fun restartPinnedPolling() {
+        pinnedJob?.cancel()
+        val journey = _state.value.selection as? SelectionState.Journey ?: return
+        val serviceId = journey.serviceId ?: return
+        pinnedJob = viewModelScope.launch {
+            while (true) {
+                pollPinnedOnce(serviceId = serviceId, tripId = journey.tripId)
+                delay(MapDefaults.VEHICLE_POLL_MILLIS)
+            }
+        }
+    }
+
+    private suspend fun pollPinnedOnce(serviceId: Long, tripId: Long) {
+        try {
+            val vehicle = repository.vehicleForTrip(serviceId = serviceId, tripId = tripId)
+            pinnedVehicle = vehicle
+            _state.update { current ->
+                val selection = current.selection
+                if (selection !is SelectionState.Journey || selection.tripId != tripId) {
+                    return@update current
+                }
+                current.copy(
+                    selection = selection.copy(vehicle = vehicle, loading = false),
+                    decorations = current.decorations.copy(
+                        vehicles = mergePinned(bboxVehicles, vehicle),
+                        selectedVehicleId = vehicle?.id,
+                    ),
+                )
+            }
+        } catch (error: IOException) {
+            // The schedule is still useful; leave the last known vehicle alone.
         }
     }
 
@@ -345,51 +476,22 @@ class MapViewModel(
         }
     }
 
-    /** Requests a fresh position and asks the map to move there. */
-    fun onLocateRequested() {
-        viewModelScope.launch {
-            val position = locationProvider.lastKnown() ?: locationProvider.current() ?: return@launch
-            hasExplicitTarget = true
-            _state.update { it.copy(moveCameraTo = position) }
-        }
-    }
-
     /**
-     * Moves the camera to an arbitrary position.
+     * Finds a stop's name.
      *
-     * Used by the debug launch extras to open the map somewhere specific
-     * without a real location fix, and the natural hook for opening on a
-     * favourite stop once favourites exist.
-     *
-     * @param latitude target latitude in degrees.
-     * @param longitude target longitude in degrees.
+     * Searches the selected route's calling points as well as the stops loaded
+     * for the viewport: a stop tapped in a journey's schedule is very often
+     * outside the current viewport, or below the zoom at which stops load at
+     * all, in which case only the route carries its name.
      */
-    fun moveTo(latitude: Double, longitude: Double) {
-        hasExplicitTarget = true
-        _state.update { it.copy(moveCameraTo = CoarsePosition(latitude, longitude)) }
-    }
-
-    /** Acknowledges a camera move so it is not repeated. */
-    fun onCameraMoveHandled() {
-        _state.update { it.copy(moveCameraTo = null) }
-    }
-
-    /**
-     * Called once the user grants location permission.
-     *
-     * Granting permission is not itself a request to be taken somewhere, so
-     * this only centres the map when there was no remembered position to
-     * honour and nothing else has asked for a specific view.
-     */
-    fun onLocationPermissionGranted() {
-        if (hadRememberedCamera || hasExplicitTarget) return
-        viewModelScope.launch { centreOnUserIfPermitted() }
-    }
-
-    private suspend fun centreOnUserIfPermitted() {
-        if (hasExplicitTarget) return
-        val position = locationProvider.lastKnown() ?: return
-        _state.update { it.copy(moveCameraTo = position) }
+    private fun stopName(atcoCode: String): String? {
+        val decorations = _state.value.decorations
+        val onRoute = decorations.routeStops
+            .firstOrNull { it.stop.atcoCode == atcoCode }?.stop?.name
+        if (!onRoute.isNullOrBlank()) return onRoute
+        return decorations.stops
+            .firstOrNull { it.atcoCode == atcoCode }?.properties?.name
+            ?.takeIf { it.isNotBlank() }
     }
 
     private fun startPolling(initialDelayMillis: Long) {
@@ -416,20 +518,37 @@ class MapViewModel(
         try {
             val vehicles = repository.vehiclesInBox(bounds)
             highWaterMark.record(bounds, vehicles.size)
-            applyVehicles(vehicles)
+            bboxVehicles = vehicles
+            applyVehicles()
         } catch (error: IOException) {
             _state.update { it.copy(loadingVehicles = false, offline = true) }
         }
     }
 
-    private fun applyVehicles(vehicles: List<Vehicle>) {
+    private fun applyVehicles() {
         _state.update { current ->
             current.copy(
                 loadingVehicles = false,
                 offline = false,
-                decorations = current.decorations.copy(vehicles = vehicles),
+                decorations = current.decorations.copy(
+                    vehicles = mergePinned(bboxVehicles, pinnedVehicle),
+                ),
             )
         }
+    }
+
+    /** The vehicles actually drawn: the viewport's, plus the pinned selection. */
+    private fun drawnVehicles(): List<Vehicle> = _state.value.decorations.vehicles
+
+    /**
+     * Merges the pinned vehicle into the bbox set.
+     *
+     * The pinned entry wins, because it is the fresher of the two and the only
+     * one carrying delay and progress.
+     */
+    private fun mergePinned(bbox: List<Vehicle>, pinned: Vehicle?): List<Vehicle> {
+        if (pinned == null) return bbox
+        return bbox.filterNot { it.id == pinned.id } + pinned
     }
 
     private fun refreshStops(camera: CameraState, bounds: BoundingBox) {
@@ -459,11 +578,17 @@ class MapViewModel(
         }
     }
 
+    private suspend fun centreOnUserIfPermitted() {
+        if (hasExplicitTarget) return
+        val position = locationProvider.lastKnown() ?: return
+        _state.update { it.copy(moveCameraTo = position) }
+    }
+
     /** Creates [MapViewModel] instances with their dependencies. */
     class Factory(
         private val repository: BustimesRepository,
         private val cameraStore: CameraStore,
-        private val locationProvider: CoarseLocationProvider,
+        private val locationProvider: LocationProvider,
     ) : ViewModelProvider.Factory {
 
         @Suppress("UNCHECKED_CAST")

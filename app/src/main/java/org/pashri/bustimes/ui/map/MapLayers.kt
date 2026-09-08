@@ -11,8 +11,10 @@ import org.maplibre.android.style.layers.PropertyFactory.circleRadius
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
 import org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap
+import org.maplibre.android.style.layers.PropertyFactory.iconAnchor
 import org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement
 import org.maplibre.android.style.layers.PropertyFactory.iconImage
+import org.maplibre.android.style.layers.PropertyFactory.iconSize
 import org.maplibre.android.style.layers.PropertyFactory.iconRotate
 import org.maplibre.android.style.layers.PropertyFactory.iconRotationAlignment
 import org.maplibre.android.style.layers.PropertyFactory.lineCap
@@ -110,6 +112,20 @@ object MapLayers {
             iconAllowOverlap(true),
             iconIgnorePlacement(true),
             iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
+            // The icon is centred on the bus and drawn with an empty middle,
+            // so rotation swings the arrowhead around the position rather
+            // than displacing the whole glyph away from it.
+            iconAnchor(Property.ICON_ANCHOR_CENTER),
+            // Scaled with zoom to stay proportional to the body circle, which
+            // is itself zoom-scaled.
+            iconSize(
+                Expression.interpolate(
+                    Expression.linear(),
+                    Expression.zoom(),
+                    Expression.stop(RADIUS_MIN_ZOOM, literal(MIN_ICON_SCALE)),
+                    Expression.stop(RADIUS_MAX_ZOOM, literal(MAX_ICON_SCALE)),
+                ),
+            ),
         )
         .apply { minZoom = MapDefaults.VEHICLES_MIN_ZOOM.toFloat() }
 
@@ -125,13 +141,10 @@ object MapLayers {
     fun vehicles(): CircleLayer = CircleLayer(LAYER_VEHICLES, SOURCE_VEHICLES)
         .withProperties(
             circleColor(get(MapGeoJson.PROPERTY_COLOUR)),
-            circleRadius(
-                Expression.switchCase(
-                    eq(get(MapGeoJson.PROPERTY_SELECTED), literal(true)),
-                    literal(SELECTED_RADIUS),
-                    literal(RADIUS),
-                ),
-            ),
+            // A single radius cannot serve every zoom: 11 px covers a few
+            // hundred metres of ground at z10, so every bus appears to sit on
+            // top of the buildings around it however accurate the fix is.
+            circleRadius(radiusByZoom()),
             circleStrokeColor("#FFFFFF"),
             circleStrokeWidth(
                 Expression.switchCase(
@@ -162,13 +175,47 @@ object MapLayers {
         )
         .apply { minZoom = LABEL_MIN_ZOOM }
 
+    /**
+     * Interpolates the body radius across the zooms vehicles are drawn at,
+     * with the selected bus drawn larger.
+     *
+     * The zoom expression has to be the input of the *outermost* interpolate:
+     * the style spec forbids a zoom expression nested inside another
+     * expression, and a `switchCase` wrapping two `interpolate`s is silently
+     * rejected — which takes the whole paint property with it, so the layer
+     * falls back to a default radius and a default black fill.
+     *
+     * @return a zoom-driven, selection-aware radius expression.
+     */
+    private fun radiusByZoom(): Expression =
+        Expression.interpolate(
+            Expression.linear(),
+            Expression.zoom(),
+            Expression.stop(RADIUS_MIN_ZOOM, selectedOr(SELECTED_MIN_RADIUS, MIN_RADIUS)),
+            Expression.stop(RADIUS_MAX_ZOOM, selectedOr(SELECTED_MAX_RADIUS, MIN_RADIUS_AT_MAX)),
+        )
+
+    /** Chooses between two sizes depending on whether a feature is selected. */
+    private fun selectedOr(whenSelected: Float, otherwise: Float): Expression =
+        Expression.switchCase(
+            eq(get(MapGeoJson.PROPERTY_SELECTED), literal(true)),
+            literal(whenSelected),
+            literal(otherwise),
+        )
+
     private const val ROUTE_WIDTH = 4.5f
     private const val ROUTE_CASING_WIDTH = 8.0f
     private const val LABEL_SIZE = 11.0f
     private const val LABEL_HALO = 1.6f
     private const val LABEL_MIN_ZOOM = 12.0f
-    private const val RADIUS = 11.0f
-    private const val SELECTED_RADIUS = 15.0f
+    private const val MIN_RADIUS = 5.0f
+    private const val MIN_RADIUS_AT_MAX = 13.0f
+    private const val SELECTED_MIN_RADIUS = 8.0f
+    private const val SELECTED_MAX_RADIUS = 17.0f
+    private const val RADIUS_MIN_ZOOM = 10
+    private const val RADIUS_MAX_ZOOM = 16
+    private const val MIN_ICON_SCALE = 0.45f
+    private const val MAX_ICON_SCALE = 1.0f
     private const val STROKE = 2.0f
     private const val SELECTED_STROKE = 3.5f
 }

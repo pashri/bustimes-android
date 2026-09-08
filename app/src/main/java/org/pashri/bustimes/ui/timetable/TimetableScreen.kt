@@ -120,7 +120,7 @@ private fun TimetableBody(
     }
     JourneyList(
         grouping = groupings[index],
-        hasTripIds = state.tripIdsByStart.isNotEmpty(),
+        isOpenable = state::isOpenable,
         onJourneyClicked = onJourneyClicked,
     )
 }
@@ -145,7 +145,7 @@ private fun directionLabel(grouping: TimetableGrouping): String =
 @Composable
 private fun JourneyList(
     grouping: TimetableGrouping,
-    hasTripIds: Boolean,
+    isOpenable: (TimetableJourney) -> Boolean,
     onJourneyClicked: (TimetableJourney) -> Unit,
 ) {
     val journeys = grouping.journeys().filter { it.calls.isNotEmpty() }
@@ -153,7 +153,7 @@ private fun JourneyList(
         items(journeys) { journey ->
             JourneyRow(
                 journey = journey,
-                clickable = hasTripIds,
+                clickable = isOpenable(journey),
                 onJourneyClicked = onJourneyClicked,
             )
             HorizontalDivider()

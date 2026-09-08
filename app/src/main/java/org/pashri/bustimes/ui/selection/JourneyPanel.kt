@@ -18,82 +18,109 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import org.pashri.bustimes.data.model.StopTime
 
 /**
- * The schedule of the selected bus.
+ * The schedule of the selected journey.
  *
  * Shows aimed times always and live times when the operator supplies them.
- * Most services outside London have no live feed, so the aimed-only layout is
- * the common case and is treated as normal rather than as missing data.
+ * Most journeys outside London and the largest operators are never tracked,
+ * so the aimed-only layout is the common case and is presented as normal
+ * rather than as missing data.
  *
- * @param bus the selected bus and its loaded schedule.
+ * @param journey the selected journey and its loaded schedule.
  * @param onStopClicked called with an ATCO code when a calling point is tapped.
  * @param onLineClicked called with the service id when the line number is tapped.
+ * @param onHeaderClicked called when the header is tapped, to recentre the map.
  * @param modifier layout modifier.
  */
 @Composable
-fun BusPanel(
-    bus: SelectionState.Bus,
+fun JourneyPanel(
+    journey: SelectionState.Journey,
     onStopClicked: (String) -> Unit,
     onLineClicked: (Long) -> Unit,
+    onHeaderClicked: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
-        BusHeader(bus = bus, onLineClicked = onLineClicked)
+        JourneyHeader(
+            journey = journey,
+            onLineClicked = onLineClicked,
+            onHeaderClicked = onHeaderClicked,
+        )
         HorizontalDivider()
         when {
-            bus.loading -> PanelSpinner()
-            bus.failed -> PanelMessage(text = "Couldn't load this journey")
-            else -> CallingPoints(times = bus.trip?.times.orEmpty(), onStopClicked = onStopClicked)
+            journey.loading -> PanelSpinner()
+            journey.failed -> PanelMessage(text = "Couldn't load this journey")
+            else -> CallingPoints(
+                times = journey.trip?.times.orEmpty(),
+                onStopClicked = onStopClicked,
+            )
         }
     }
 }
 
+/**
+ * The peek-height content: line, destination and how it is running.
+ *
+ * Tapping it recentres the map on the bus, which is the way back after
+ * panning along a route with the sheet collapsed.
+ */
 @Composable
-private fun BusHeader(bus: SelectionState.Bus, onLineClicked: (Long) -> Unit) {
-    val serviceId = bus.serviceId
+private fun JourneyHeader(
+    journey: SelectionState.Journey,
+    onLineClicked: (Long) -> Unit,
+    onHeaderClicked: () -> Unit,
+) {
+    val serviceId = journey.serviceId
     Row(
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onHeaderClicked)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         AssistChip(
             onClick = { if (serviceId != null) onLineClicked(serviceId) },
             enabled = serviceId != null,
-            label = { Text(text = bus.lineName ?: "—", fontWeight = FontWeight.Bold) },
+            label = { Text(text = journey.lineName ?: "—", fontWeight = FontWeight.Bold) },
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = bus.trip?.headsign ?: bus.vehicle?.destination ?: "",
+                text = journey.headsign.orEmpty(),
                 style = MaterialTheme.typography.titleMedium,
             )
-            val progress = bus.vehicle?.progress
-            val subtitle = when {
-                progress?.nextStop != null -> "Next stop ${progress.nextStop}"
-                bus.vehicle?.vehicle?.name != null -> bus.vehicle.vehicle.name
-                else -> null
-            }
-            if (subtitle != null) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            val delay = bus.vehicle?.delay
-            if (delay != null) {
-                LatenessLabel(lateness = latenessFromDelay(delay))
-            }
+            JourneySubtitle(journey = journey)
         }
+    }
+}
+
+@Composable
+private fun JourneySubtitle(journey: SelectionState.Journey) {
+    val progress = journey.vehicle?.progress
+    val subtitle = when {
+        journey.untracked -> "Not tracked"
+        progress?.nextStop != null -> "Next stop ${progress.nextStop}"
+        else -> journey.vehicle?.vehicle?.name
+    }
+    if (subtitle != null) {
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    val delay = journey.vehicle?.delay
+    if (delay != null) {
+        LatenessLabel(lateness = latenessFromDelay(delay))
     }
 }
 
 /** Turns the vehicle feed's delay in seconds into a lateness. */
 private fun latenessFromDelay(seconds: Int): Lateness {
-    val minutes = seconds / 60L
+    val minutes = seconds / SECONDS_PER_MINUTE
     return when {
         minutes >= 1 -> Lateness.Late(minutes)
         minutes <= -1 -> Lateness.Early(-minutes)
@@ -119,22 +146,11 @@ private fun CallingPoint(time: StopTime, onStopClicked: (String) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(modifier = Modifier.width(64.dp)) {
-            Text(
-                text = (time.aimedDepartureTime ?: time.aimedArrivalTime).orEmpty().take(TIME_LENGTH),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textDecoration = if (time.hasLiveTime) TextDecoration.LineThrough else null,
-            )
-            val live = time.actualDepartureTime ?: time.expectedDepartureTime
-            if (live != null) {
-                Text(
-                    text = live.take(TIME_LENGTH),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-        }
+        TimeColumn(
+            aimed = time.aimedDepartureTime ?: time.aimedArrivalTime,
+            live = time.actualDepartureTime ?: time.expectedDepartureTime,
+            modifier = Modifier.width(64.dp),
+        )
         Column(modifier = Modifier.weight(1f)) {
             Text(text = time.stop.name, style = MaterialTheme.typography.bodyLarge)
             if (!time.pickUp) {
@@ -149,8 +165,6 @@ private fun CallingPoint(time: StopTime, onStopClicked: (String) -> Unit) {
     }
     HorizontalDivider()
 }
-
-private const val TIME_LENGTH = 5
 
 /** Shared spinner for a loading panel. */
 @Composable
@@ -178,3 +192,5 @@ fun PanelMessage(text: String, modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxWidth().padding(24.dp),
     )
 }
+
+private const val SECONDS_PER_MINUTE = 60L

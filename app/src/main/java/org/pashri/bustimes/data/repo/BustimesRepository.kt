@@ -76,11 +76,33 @@ class BustimesRepository(
      *
      * Used to map timetable columns to trip ids by matching a column's first
      * departure against [Trip.start].
+     *
+     * Pages are followed, because one page is a hundred trips and is not
+     * ordered by time: a frequent service returns a page starting near midday
+     * and omitting the whole morning, so a single page leaves most of the
+     * timetable unmatched.
+     *
+     * @param serviceId the service to list.
+     * @param date the service date, as `YYYY-MM-DD`.
+     * @param maxPages a stop so a pathological service cannot loop forever.
+     * @return every trip found, across pages.
      */
-    suspend fun tripsForService(serviceId: Long, date: String): List<Trip> =
-        get(Bustimes.tripsForService(serviceId, date)) {
-            json.decodeFromString<TripPage>(it).results
+    suspend fun tripsForService(
+        serviceId: Long,
+        date: String,
+        maxPages: Int = MAX_TRIP_PAGES,
+    ): List<Trip> {
+        val trips = mutableListOf<Trip>()
+        var url: String? = Bustimes.tripsForService(serviceId, date)
+        var pages = 0
+        while (url != null && pages < maxPages) {
+            val page = get(url) { json.decodeFromString<TripPage>(it) }
+            trips += page.results
+            url = page.next
+            pages++
         }
+        return trips
+    }
 
     /**
      * A stop's departure board.
@@ -128,6 +150,9 @@ class BustimesRepository(
          * Tolerates fields bustimes.org adds over time, and treats absent
          * fields as their defaults so a payload gaining a key never crashes.
          */
+        /** Trip pages to follow before giving up. 100 trips per page. */
+        const val MAX_TRIP_PAGES = 6
+
         val defaultJson = Json {
             ignoreUnknownKeys = true
             explicitNulls = false

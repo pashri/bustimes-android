@@ -1,11 +1,16 @@
 package org.pashri.bustimes.ui.map
 
+import android.animation.ValueAnimator
+import android.content.Context
+import android.view.Gravity
+import android.view.animation.LinearInterpolator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -14,9 +19,14 @@ import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngBounds
+import org.maplibre.android.location.LocationComponentActivationOptions
+import org.maplibre.android.location.modes.CameraMode
+import org.maplibre.android.location.modes.RenderMode
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.pashri.bustimes.data.net.BoundingBox
 
@@ -31,11 +41,17 @@ import org.pashri.bustimes.data.net.BoundingBox
  * @param decorations everything to draw.
  * @param initialCamera where to open; only read on first composition.
  * @param darkTheme selects the basemap style.
+ * @param locationEnabled whether to show the user's own position.
+ * @param bottomInset height obscured by the sheet. Applied as map padding, so
+ *   the camera treats the visible area as the map, and used to lift the
+ *   compass clear of the sheet.
  * @param onCameraIdle called when the camera settles, with the new viewport.
  * @param onVehicleTapped called with a tapped vehicle's id.
  * @param onStopTapped called with a tapped stop's ATCO code.
  * @param moveTo when non-null, the camera eases to this position.
  * @param onMoveHandled called once a [moveTo] has been applied.
+ * @param fitRoute when true, the camera frames the whole drawn route.
+ * @param onFitRouteHandled called once the route has been framed.
  * @param modifier layout modifier.
  */
 @Composable
@@ -43,17 +59,26 @@ fun BustimesMap(
     decorations: MapDecorations,
     initialCamera: CameraState,
     darkTheme: Boolean,
+    locationEnabled: Boolean,
+    bottomInset: Dp,
     onCameraIdle: (CameraState, BoundingBox, Boolean) -> Unit,
     onVehicleTapped: (Long) -> Unit,
     onStopTapped: (String) -> Unit,
     moveTo: LatLng?,
     onMoveHandled: () -> Unit,
+    fitRoute: Boolean,
+    onFitRouteHandled: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val density = LocalDensity.current.density
+    val density = LocalDensity.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val controller = remember { MapController(density) }
+    val controller = remember { MapController(density.density) }
+    val insetPx = with(density) { bottomInset.roundToPx() }
+    val compassBottomPx = with(density) {
+        (bottomInset + FAB_MARGIN + FAB_SIZE + COMPASS_GAP).roundToPx()
+    }
+    val compassRightPx = with(density) { FAB_MARGIN.roundToPx() }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event -> controller.onLifecycleEvent(event) }
@@ -68,6 +93,7 @@ fun BustimesMap(
             MapView(context).also { view ->
                 controller.attach(
                     view = view,
+                    context = context,
                     initialCamera = initialCamera,
                     darkTheme = darkTheme,
                     onCameraIdle = onCameraIdle,
@@ -78,9 +104,18 @@ fun BustimesMap(
         },
         update = {
             controller.setStyleForTheme(darkTheme)
+            controller.setChrome(
+                bottomPaddingPx = insetPx,
+                compassBottomPx = compassBottomPx,
+                compassRightPx = compassRightPx,
+            )
+            controller.setLocationEnabled(locationEnabled)
             controller.render(decorations)
             if (moveTo != null && controller.easeTo(moveTo)) {
                 onMoveHandled()
+            }
+            if (fitRoute && controller.frameRoute(decorations.routeLegs)) {
+                onFitRouteHandled()
             }
         },
     )
@@ -98,14 +133,22 @@ private class MapController(private val density: Float) {
     private var view: MapView? = null
     private var map: MapLibreMap? = null
     private var style: Style? = null
+    private var context: Context? = null
     private var currentStyleUrl: String? = null
     private var pendingDecorations: MapDecorations? = null
     private var pendingTarget: LatLng? = null
+    private var locationActive = false
     private var onVehicleTapped: ((Long) -> Unit)? = null
     private var onStopTapped: ((String) -> Unit)? = null
 
+    /** Where each vehicle is currently drawn, which is not where it was reported. */
+    private val drawnPositions = mutableMapOf<Long, DoubleArray>()
+    private var tween: ValueAnimator? = null
+    private var latestVehicles: MapDecorations? = null
+
     fun attach(
         view: MapView,
+        context: Context,
         initialCamera: CameraState,
         darkTheme: Boolean,
         onCameraIdle: (CameraState, BoundingBox, Boolean) -> Unit,
@@ -113,12 +156,17 @@ private class MapController(private val density: Float) {
         onStopTapped: (String) -> Unit,
     ) {
         this.view = view
+        this.context = context
         this.onVehicleTapped = onVehicleTapped
         this.onStopTapped = onStopTapped
         view.onCreate(null)
         view.getMapAsync { ready ->
             map = ready
             ready.cameraPosition = initialCamera.toCameraPosition()
+            // Facing north is the norm, so the compass hides itself until the
+            // map is actually rotated.
+            ready.uiSettings.setCompassGravity(Gravity.BOTTOM or Gravity.END)
+            ready.uiSettings.setCompassFadeFacingNorth(true)
             loadStyle(MapStyles.forTheme(darkTheme), ready)
             pendingTarget?.let { target ->
                 pendingTarget = null
@@ -136,8 +184,65 @@ private class MapController(private val density: Float) {
             Lifecycle.Event.ON_RESUME -> view.onResume()
             Lifecycle.Event.ON_PAUSE -> view.onPause()
             Lifecycle.Event.ON_STOP -> view.onStop()
-            Lifecycle.Event.ON_DESTROY -> view.onDestroy()
+            Lifecycle.Event.ON_DESTROY -> {
+                tween?.cancel()
+                view.onDestroy()
+            }
             else -> Unit
+        }
+    }
+
+    /**
+     * Positions the map's own chrome and camera around the sheet.
+     *
+     * Map padding makes the camera treat the unobscured part of the map as the
+     * whole map, so centring on a bus puts it above the sheet rather than
+     * under it. The compass is moved to sit directly above the locate button,
+     * because its default top-right position lands under the status bar and is
+     * awkward to reach.
+     */
+    fun setChrome(bottomPaddingPx: Int, compassBottomPx: Int, compassRightPx: Int) {
+        val map = map ?: return
+        // setPadding is deprecated in favour of CameraUpdateFactory.paddingTo,
+        // but that issues a camera *movement* rather than declaring padding,
+        // which is the wrong shape for something applied on every
+        // recomposition. setPadding is idempotent, so it can be reapplied
+        // freely, and is what keeps a selected bus above the sheet.
+        @Suppress("DEPRECATION")
+        map.setPadding(0, 0, 0, bottomPaddingPx)
+        map.uiSettings.setCompassMargins(0, 0, compassRightPx, compassBottomPx)
+    }
+
+    /**
+     * Shows or hides the user's own position.
+     *
+     * The accuracy ring is deliberately visible: it is the only thing that
+     * tells the user whether a vague-looking position is the app's fault or
+     * the fix's.
+     */
+    fun setLocationEnabled(enabled: Boolean) {
+        val map = map ?: return
+        val style = style ?: return
+        val context = context ?: return
+        if (!enabled) {
+            if (locationActive) {
+                map.locationComponent.isLocationComponentEnabled = false
+                locationActive = false
+            }
+            return
+        }
+        if (locationActive) return
+        try {
+            map.locationComponent.activateLocationComponent(
+                LocationComponentActivationOptions.builder(context, style).build(),
+            )
+            map.locationComponent.isLocationComponentEnabled = true
+            map.locationComponent.cameraMode = CameraMode.NONE
+            map.locationComponent.renderMode = RenderMode.COMPASS
+            locationActive = true
+        } catch (error: SecurityException) {
+            // Permission was revoked between the check and here.
+            locationActive = false
         }
     }
 
@@ -145,6 +250,7 @@ private class MapController(private val density: Float) {
         val wanted = MapStyles.forTheme(darkTheme)
         val map = map ?: return
         if (wanted != currentStyleUrl) {
+            locationActive = false
             loadStyle(wanted, map)
         }
     }
@@ -156,8 +262,6 @@ private class MapController(private val density: Float) {
             pendingDecorations = decorations
             return
         }
-        source(style, MapLayers.SOURCE_VEHICLES)
-            ?.setGeoJson(MapGeoJson.vehicles(decorations.vehicles, decorations.selectedVehicleId))
         source(style, MapLayers.SOURCE_STOPS)
             ?.setGeoJson(MapGeoJson.stops(decorations.stops, decorations.selectedStopAtco))
         source(style, MapLayers.SOURCE_ROUTE)
@@ -165,6 +269,60 @@ private class MapController(private val density: Float) {
         source(style, MapLayers.SOURCE_ROUTE_STOPS)
             ?.setGeoJson(MapGeoJson.routeStops(decorations.routeStops))
         applyRouteDimming(style, decorations.routeDimmed)
+        startTween(decorations)
+    }
+
+    /**
+     * Animates vehicles from where they are drawn to where they were reported.
+     *
+     * Positions arrive every twelve seconds, so a bus at 30 mph moves about
+     * 160 m between fixes — most of the screen at close zoom. Snapping reads
+     * as a glitch, and the jump can visually cut across buildings. Every frame
+     * drawn here is an interpolation between two genuinely reported positions,
+     * so no position is ever invented ahead of the data.
+     */
+    private fun startTween(decorations: MapDecorations) {
+        latestVehicles = decorations
+        val targets = decorations.vehicles.associate { vehicle ->
+            vehicle.id to doubleArrayOf(vehicle.longitude, vehicle.latitude)
+        }
+        val origins = targets.mapValues { (id, target) -> drawnPositions[id] ?: target }
+        drawnPositions.keys.retainAll(targets.keys)
+
+        tween?.cancel()
+        if (origins.none { (id, from) -> !from.contentEquals(targets[id]) }) {
+            drawnPositions.putAll(targets)
+            drawVehicles(decorations, targets)
+            return
+        }
+        tween = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = MapDefaults.VEHICLE_TWEEN_MILLIS
+            interpolator = LinearInterpolator()
+            addUpdateListener { animator ->
+                val fraction = animator.animatedFraction
+                val frame = targets.mapValues { (id, to) ->
+                    val from = origins.getValue(id)
+                    doubleArrayOf(
+                        from[0] + (to[0] - from[0]) * fraction,
+                        from[1] + (to[1] - from[1]) * fraction,
+                    )
+                }
+                drawnPositions.putAll(frame)
+                latestVehicles?.let { drawVehicles(it, frame) }
+            }
+            start()
+        }
+    }
+
+    private fun drawVehicles(decorations: MapDecorations, positions: Map<Long, DoubleArray>) {
+        val style = style ?: return
+        source(style, MapLayers.SOURCE_VEHICLES)?.setGeoJson(
+            MapGeoJson.vehicles(
+                vehicles = decorations.vehicles,
+                selectedId = decorations.selectedVehicleId,
+                positions = positions,
+            ),
+        )
     }
 
     /**
@@ -184,6 +342,31 @@ private class MapController(private val density: Float) {
         }
         val zoom = maxOf(map.cameraPosition.zoom, MapDefaults.LOCATED_ZOOM)
         map.easeCamera(CameraUpdateFactory.newLatLngZoom(target, zoom), EASE_MILLIS)
+        return true
+    }
+
+    /**
+     * Frames a whole route.
+     *
+     * Used when a journey is opened from a departure board or timetable rather
+     * than by tapping a bus, where there may be no vehicle to centre on and
+     * the useful view is the route end to end.
+     *
+     * @param legs the route's per-leg geometry.
+     * @return true when the camera was moved.
+     */
+    fun frameRoute(legs: List<List<List<Double>>>): Boolean {
+        val map = map ?: return false
+        val points = legs.flatten()
+        if (points.isEmpty()) return false
+        val bounds = LatLngBounds.from(
+            points.maxOf { it[1] },
+            points.maxOf { it[0] },
+            points.minOf { it[1] },
+            points.minOf { it[0] },
+        )
+        val padding = (ROUTE_PADDING_DP * density).toInt()
+        map.easeCamera(CameraUpdateFactory.newLatLngBounds(bounds, padding), EASE_MILLIS)
         return true
     }
 
@@ -222,12 +405,10 @@ private class MapController(private val density: Float) {
      */
     private fun applyRouteDimming(style: Style, dimmed: Boolean) {
         val opacity = if (dimmed) DIMMED_OPACITY else 1.0f
-        style.getLayer(MapLayers.LAYER_ROUTE)?.setProperties(
-            org.maplibre.android.style.layers.PropertyFactory.lineOpacity(opacity),
-        )
-        style.getLayer(MapLayers.LAYER_ROUTE_CASING)?.setProperties(
-            org.maplibre.android.style.layers.PropertyFactory.lineOpacity(opacity * CASING_FACTOR),
-        )
+        style.getLayer(MapLayers.LAYER_ROUTE)
+            ?.setProperties(PropertyFactory.lineOpacity(opacity))
+        style.getLayer(MapLayers.LAYER_ROUTE_CASING)
+            ?.setProperties(PropertyFactory.lineOpacity(opacity * CASING_FACTOR))
     }
 
     private fun source(style: Style, id: String): GeoJsonSource? = style.getSourceAs(id)
@@ -282,6 +463,7 @@ private class MapController(private val density: Float) {
         const val EASE_MILLIS = 600
         const val DIMMED_OPACITY = 0.35f
         const val CASING_FACTOR = 0.8f
+        const val ROUTE_PADDING_DP = 48f
     }
 }
 

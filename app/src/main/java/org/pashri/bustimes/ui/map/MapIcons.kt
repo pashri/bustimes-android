@@ -24,31 +24,51 @@ object MapIcons {
     const val STOP_ROUTE = "stop-marker-route"
 
     /**
-     * Builds the direction-of-travel wedge.
+     * Builds the direction-of-travel arrowhead.
      *
-     * Drawn pointing up in a square bitmap so MapLibre's `icon-rotate` aims it
-     * along the vehicle's heading, and sized larger than the bus body so the
-     * tip protrudes past the circle drawn over it.
+     * Drawn pointing up, offset from the centre of a deliberately oversized
+     * bitmap. MapLibre rotates a symbol about its anchor, and the anchor is
+     * the bitmap's centre, so putting the arrow above the centre and leaving
+     * the middle empty makes it orbit the bus at a fixed radius rather than
+     * hanging off one side of it. The empty middle is where the coloured body
+     * circle shows through.
      *
      * @param density the display density, so the icon is crisp on any screen.
-     * @return the wedge bitmap.
+     * @return the arrowhead bitmap.
      */
     fun heading(density: Float): Bitmap {
-        val size = (WEDGE_SIZE_DP * density).toInt()
+        val size = (BITMAP_SIZE_DP * density).toInt()
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val centre = size / 2f
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(230, 40, 40, 40)
-            style = Paint.Style.FILL
-        }
+        val tip = centre - (ORBIT_DP + ARROW_HEIGHT_DP) * density
+        val base = centre - ORBIT_DP * density
+        val halfWidth = ARROW_HALF_WIDTH_DP * density
+
         val path = Path().apply {
-            moveTo(centre, 0f)
-            lineTo(centre - size * WEDGE_HALF_WIDTH, size * WEDGE_HEIGHT)
-            lineTo(centre + size * WEDGE_HALF_WIDTH, size * WEDGE_HEIGHT)
+            moveTo(centre, tip)
+            lineTo(centre - halfWidth, base)
+            lineTo(centre + halfWidth, base)
             close()
         }
-        canvas.drawPath(path, paint)
+        // A white outline keeps the arrow legible over dark buildings and
+        // water as well as over the pale basemap.
+        canvas.drawPath(
+            path,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                style = Paint.Style.STROKE
+                strokeWidth = 2f * density
+                strokeJoin = Paint.Join.ROUND
+            },
+        )
+        canvas.drawPath(
+            path,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.argb(235, 34, 34, 34)
+                style = Paint.Style.FILL
+            },
+        )
         return bitmap
     }
 
@@ -78,9 +98,13 @@ object MapIcons {
         return bitmap
     }
 
-    private const val WEDGE_SIZE_DP = 34f
-    private const val WEDGE_HALF_WIDTH = 0.16f
-    private const val WEDGE_HEIGHT = 0.40f
+    /** Distance from the bus position to the arrow's base. */
+    private const val ORBIT_DP = 13f
+    private const val ARROW_HEIGHT_DP = 9f
+    private const val ARROW_HALF_WIDTH_DP = 6f
+
+    /** Twice the furthest the arrow reaches, so rotation never clips it. */
+    private const val BITMAP_SIZE_DP = 2f * (ORBIT_DP + ARROW_HEIGHT_DP)
     private const val STOP_SIZE_DP = 12f
     private const val STOP_ROUTE_SIZE_DP = 16f
     private const val RING_DP = 2f

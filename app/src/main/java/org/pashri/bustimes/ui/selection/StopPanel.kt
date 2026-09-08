@@ -16,30 +16,32 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import org.pashri.bustimes.data.model.Departure
 
 /**
  * The departure board for the selected stop.
  *
+ * A whole row is the tap target and opens that departure's schedule. There is
+ * deliberately no per-row link to the full timetable: the timetable is one tap
+ * from the journey panel that opens next, so putting it on every row here
+ * would give two different destinations for one row.
+ *
  * @param stop the selected stop and its loaded board.
  * @param onDepartureClicked called with a departure's trip id, when it has one.
- * @param onLineClicked called with a service slug when a line number is tapped.
  * @param modifier layout modifier.
  */
 @Composable
 fun StopPanel(
     stop: SelectionState.Stop,
     onDepartureClicked: (Long) -> Unit,
-    onLineClicked: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
             text = stop.name ?: stop.atcoCode,
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
         )
         HorizontalDivider()
         val board = stop.board
@@ -53,7 +55,6 @@ fun StopPanel(
             else -> DepartureList(
                 departures = board.departures,
                 onDepartureClicked = onDepartureClicked,
-                onLineClicked = onLineClicked,
             )
         }
     }
@@ -63,26 +64,17 @@ fun StopPanel(
 private fun DepartureList(
     departures: List<Departure>,
     onDepartureClicked: (Long) -> Unit,
-    onLineClicked: (String) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxWidth()) {
         items(departures) { departure ->
-            DepartureRow(
-                departure = departure,
-                onDepartureClicked = onDepartureClicked,
-                onLineClicked = onLineClicked,
-            )
+            DepartureRow(departure = departure, onDepartureClicked = onDepartureClicked)
             HorizontalDivider()
         }
     }
 }
 
 @Composable
-private fun DepartureRow(
-    departure: Departure,
-    onDepartureClicked: (Long) -> Unit,
-    onLineClicked: (String) -> Unit,
-) {
+private fun DepartureRow(departure: Departure, onDepartureClicked: (Long) -> Unit) {
     val tripId = departure.tripId
     Row(
         modifier = Modifier
@@ -96,11 +88,7 @@ private fun DepartureRow(
             text = departure.lineName,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier
-                .width(52.dp)
-                .clickable(enabled = departure.serviceSlug != null) {
-                    departure.serviceSlug?.let(onLineClicked)
-                },
+            modifier = Modifier.width(52.dp),
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(text = departure.destination, style = MaterialTheme.typography.bodyLarge)
@@ -117,25 +105,6 @@ private fun DepartureRow(
                     expectedText = departure.expectedTime,
                 ),
             )
-        }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = departure.aimedTime.orEmpty(),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textDecoration = when {
-                    departure.cancelled -> TextDecoration.LineThrough
-                    departure.isTracked -> TextDecoration.LineThrough
-                    else -> null
-                },
-            )
-            if (departure.expectedTime != null) {
-                Text(
-                    text = departure.expectedTime,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
             if (departure.cancelled) {
                 Text(
                     text = "Cancelled",
@@ -144,5 +113,11 @@ private fun DepartureRow(
                 )
             }
         }
+        TimeColumn(
+            aimed = departure.aimedTime,
+            live = departure.expectedTime,
+            cancelled = departure.cancelled,
+            alignment = Alignment.End,
+        )
     }
 }
