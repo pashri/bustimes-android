@@ -49,6 +49,10 @@ import org.pashri.bustimes.data.net.BoundingBox
  * @param bottomInset height obscured by the sheet. Applied as map padding, so
  *   the camera treats the visible area as the map, and used to lift the
  *   compass clear of the sheet.
+ * @param favouritesVisible whether a favourites button is stacked above the
+ *   locate button, which the compass must clear.
+ * @param compassHidden whether to hide the compass, because the favourites
+ *   menu is open where it would otherwise sit.
  * @param onCameraIdle called when the camera settles, with the new viewport.
  * @param onVehicleTapped called with a tapped vehicle's id.
  * @param onStopTapped called with a tapped stop's ATCO code.
@@ -65,6 +69,8 @@ fun BustimesMap(
     darkTheme: Boolean,
     locationEnabled: Boolean,
     bottomInset: Dp,
+    favouritesVisible: Boolean,
+    compassHidden: Boolean,
     onCameraIdle: (CameraState, BoundingBox, Boolean) -> Unit,
     onVehicleTapped: (Long) -> Unit,
     onStopTapped: (String) -> Unit,
@@ -86,8 +92,12 @@ fun BustimesMap(
     val safeDrawing = WindowInsets.safeDrawing
     val systemBottomPx = safeDrawing.getBottom(density)
     val systemRightPx = safeDrawing.getRight(density, LocalLayoutDirection.current)
+    // The compass sits outermost of the stacked buttons, because it comes and
+    // goes with the map's rotation and a transient control must not displace
+    // the persistent ones beneath it.
+    val stackHeight = if (favouritesVisible) FAB_SIZE * 2 + FAB_STACK_GAP else FAB_SIZE
     val compassBottomPx = with(density) {
-        systemBottomPx + (bottomInset + FAB_MARGIN + FAB_SIZE + COMPASS_GAP).roundToPx()
+        systemBottomPx + (bottomInset + FAB_MARGIN + stackHeight + COMPASS_GAP).roundToPx()
     }
     val compassRightPx = with(density) { systemRightPx + FAB_MARGIN.roundToPx() }
 
@@ -119,6 +129,7 @@ fun BustimesMap(
                 bottomPaddingPx = insetPx,
                 compassBottomPx = compassBottomPx,
                 compassRightPx = compassRightPx,
+                compassVisible = !compassHidden,
             )
             controller.setLocationEnabled(locationEnabled)
             controller.render(decorations)
@@ -212,8 +223,14 @@ private class MapController(private val density: Float) {
      * because its default top-right position lands under the status bar and is
      * awkward to reach.
      */
-    fun setChrome(bottomPaddingPx: Int, compassBottomPx: Int, compassRightPx: Int) {
+    fun setChrome(
+        bottomPaddingPx: Int,
+        compassBottomPx: Int,
+        compassRightPx: Int,
+        compassVisible: Boolean,
+    ) {
         val map = map ?: return
+        map.uiSettings.isCompassEnabled = compassVisible
         // setPadding is deprecated in favour of CameraUpdateFactory.paddingTo,
         // but that issues a camera *movement* rather than declaring padding,
         // which is the wrong shape for something applied on every

@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,7 +22,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +54,9 @@ import org.pashri.bustimes.data.net.BoundingBox
 internal val FAB_SIZE = 56.dp
 internal val FAB_MARGIN = 16.dp
 internal val COMPASS_GAP = 8.dp
+
+/** Space between stacked buttons in the corner. */
+internal val FAB_STACK_GAP = 12.dp
 private val FAB_CORNER = 16.dp
 private val FAB_ELEVATION = 6.dp
 
@@ -76,6 +82,7 @@ private val FAB_ELEVATION = 6.dp
  * @param onResumed called when the screen becomes visible, to resume polling.
  * @param onPaused called when the screen is hidden, to stop polling.
  * @param onDiagnosticsRequested called on a long press of the locate button.
+ * @param onFavouritesToggled called to open or close the favourites menu.
  * @param modifier layout modifier.
  */
 @Composable
@@ -93,6 +100,7 @@ fun MapScreen(
     onResumed: () -> Unit,
     onPaused: () -> Unit,
     onDiagnosticsRequested: () -> Unit,
+    onFavouritesToggled: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -131,6 +139,8 @@ fun MapScreen(
                 darkTheme = darkTheme,
                 locationEnabled = granted,
                 bottomInset = bottomInset,
+                favouritesVisible = state.favouriteCodes.isNotEmpty(),
+                compassHidden = state.favouritesMenuOpen,
                 onCameraIdle = onCameraIdle,
                 onVehicleTapped = onVehicleTapped,
                 onStopTapped = onStopTapped,
@@ -144,6 +154,9 @@ fun MapScreen(
         MapOverlays(
             state = state,
             bottomInset = bottomInset,
+            hasFavourites = state.favouriteCodes.isNotEmpty(),
+            favouritesMenuOpen = state.favouritesMenuOpen,
+            onFavouritesToggled = onFavouritesToggled,
             // Asking again here is not a nag: locating is the one action that
             // needs precise location, so it is the natural place to request it.
             onLocateRequested = {
@@ -163,12 +176,15 @@ fun MapScreen(
     }
 }
 
-/** Hints, progress and the locate button drawn over the map. */
+/** Hints, progress and the on-map buttons drawn over the map. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MapOverlays(
     state: MapUiState,
     bottomInset: Dp,
+    hasFavourites: Boolean,
+    favouritesMenuOpen: Boolean,
+    onFavouritesToggled: () -> Unit,
     onLocateRequested: () -> Unit,
     onDiagnosticsRequested: () -> Unit,
     showPreciseHint: Boolean,
@@ -209,6 +225,51 @@ private fun MapOverlays(
                 .align(Alignment.BottomEnd)
                 .padding(end = FAB_MARGIN, bottom = FAB_MARGIN + bottomInset),
         )
+        // Directly above the locate button, and only present when there is
+        // something to show: an empty menu button would be a control that
+        // does nothing until the app is used for a while.
+        if (hasFavourites) {
+            FavouritesButton(
+                open = favouritesMenuOpen,
+                onClick = onFavouritesToggled,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(
+                        end = FAB_MARGIN,
+                        bottom = FAB_MARGIN + bottomInset + FAB_SIZE + FAB_STACK_GAP,
+                    ),
+            )
+        }
+    }
+}
+
+/**
+ * The favourites button.
+ *
+ * Turns into a close button while its menu is open, so the same target both
+ * opens and dismisses rather than the menu only closing by tapping away.
+ *
+ * @param open whether the menu is showing.
+ * @param onClick called to open or close it.
+ * @param modifier layout modifier.
+ */
+@Composable
+private fun FavouritesButton(open: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        shape = RoundedCornerShape(FAB_CORNER),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shadowElevation = FAB_ELEVATION,
+        modifier = modifier.size(FAB_SIZE).clickable(onClick = onClick),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = if (open) Icons.Filled.Close else Icons.Filled.Star,
+                contentDescription = stringResource(
+                    if (open) R.string.close_favourites else R.string.favourites,
+                ),
+            )
+        }
     }
 }
 

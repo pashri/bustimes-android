@@ -9,4 +9,8 @@
     <string name="offline_banner">Offline — showing saved data</string>
     <string name="approximate_location_hint">Approximate location only — tap to enable precise</string>
     <string name="diagnostics">Show diagnostics</string>
+    <string name="add_favourite">Add to favourites</string>
+    <string name="remove_favourite">Remove from favourites</string>
+    <string name="favourites">Favourites</string>
+    <string name="close_favourites">Close favourites</string>
 </resources>

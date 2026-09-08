@@ -9,14 +9,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.pashri.bustimes.R
 import org.pashri.bustimes.data.model.Departure
 
 /**
@@ -30,20 +37,46 @@ import org.pashri.bustimes.data.model.Departure
  * @param stop the selected stop and its loaded board.
  * @param onDepartureClicked called with a departure's trip id and journey id;
  *   a tracked departure has only the latter and needs resolving.
+ * @param isFavourite whether this stop is starred.
+ * @param onToggleFavourite called to star or un-star it.
  * @param modifier layout modifier.
  */
 @Composable
 fun StopPanel(
     stop: SelectionState.Stop,
     onDepartureClicked: (Long?, Long?) -> Unit,
+    isFavourite: Boolean,
+    onToggleFavourite: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            text = stop.name ?: stop.atcoCode,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stop.name ?: stop.atcoCode,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f).padding(vertical = 12.dp),
+            )
+            // The same control stars and un-stars, so there is one place to
+            // manage a favourite rather than a separate list to edit.
+            IconButton(onClick = onToggleFavourite, enabled = stop.canBeStarred) {
+                Icon(
+                    imageVector = if (isFavourite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                    contentDescription = if (isFavourite) {
+                        stringResource(R.string.remove_favourite)
+                    } else {
+                        stringResource(R.string.add_favourite)
+                    },
+                    tint = if (isFavourite) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+        }
         HorizontalDivider()
         val board = stop.board
         when {

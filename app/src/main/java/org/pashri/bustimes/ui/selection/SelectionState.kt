@@ -92,8 +92,23 @@ sealed interface SelectionState {
     data class Stop(
         val atcoCode: String,
         val name: String? = null,
+        /**
+         * Where the stop is, when known.
+         *
+         * Needed to star it: a favourite stores its own position so the menu
+         * can be ordered by distance without a request. Null when the stop
+         * was reached from somewhere carrying no coordinates, in which case
+         * it cannot be starred.
+         */
+        val latitude: Double? = null,
+        val longitude: Double? = null,
         val board: DepartureBoard? = null,
         val loading: Boolean = true,
         val unreadable: Boolean = false,
-    ) : SelectionState
+    ) : SelectionState {
+
+        /** True when this stop carries enough detail to be starred. */
+        val canBeStarred: Boolean
+            get() = latitude != null && longitude != null && !name.isNullOrBlank()
+    }
 }
