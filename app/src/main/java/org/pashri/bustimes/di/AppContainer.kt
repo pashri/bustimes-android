@@ -1,7 +1,7 @@
 package org.pashri.bustimes.di
 
 import android.content.Context
-import org.pashri.bustimes.data.location.CoarseLocationProvider
+import org.pashri.bustimes.data.location.LocationProvider
 import org.pashri.bustimes.data.net.buildHttpClient
 import org.pashri.bustimes.data.prefs.CameraStore
 import org.pashri.bustimes.data.repo.BustimesRepository
@@ -25,7 +25,7 @@ class AppContainer(context: Context) {
     val cameraStore = CameraStore(context)
 
     /** Supplies the user's approximate position. */
-    val locationProvider = CoarseLocationProvider(context)
+    val locationProvider = LocationProvider(context)
 
     /** Builds the map screen's view model. */
     val mapViewModelFactory = MapViewModel.Factory(repository, cameraStore, locationProvider)

@@ -21,20 +21,27 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import org.maplibre.android.geometry.LatLng
 import org.pashri.bustimes.R
+import org.pashri.bustimes.data.net.BoundingBox
+
+/** Size and spacing of the locate button, shared with the map's compass. */
+internal val FAB_SIZE = 56.dp
+internal val FAB_MARGIN = 16.dp
+internal val COMPASS_GAP = 8.dp
 
 /**
  * The opening screen: a map of live buses and stops.
@@ -46,12 +53,15 @@ import org.pashri.bustimes.R
  *
  * @param state everything to render.
  * @param darkTheme selects the basemap style.
+ * @param bottomInset height obscured by the sheet, so the camera and the
+ *   on-map controls both sit above it.
  * @param onCameraIdle forwarded to the map.
  * @param onVehicleTapped called when a bus is tapped.
  * @param onStopTapped called when a stop is tapped.
  * @param onLocateRequested called when the user asks to be located.
  * @param onPermissionGranted called when location permission is newly granted.
  * @param onCameraMoveHandled called once a requested camera move is applied.
+ * @param onFitRouteHandled called once the camera has framed the route.
  * @param onResumed called when the screen becomes visible, to resume polling.
  * @param onPaused called when the screen is hidden, to stop polling.
  * @param modifier layout modifier.
@@ -60,37 +70,35 @@ import org.pashri.bustimes.R
 fun MapScreen(
     state: MapUiState,
     darkTheme: Boolean,
-    onCameraIdle: (CameraState, org.pashri.bustimes.data.net.BoundingBox, Boolean) -> Unit,
+    bottomInset: Dp,
+    onCameraIdle: (CameraState, BoundingBox, Boolean) -> Unit,
     onVehicleTapped: (Long) -> Unit,
     onStopTapped: (String) -> Unit,
     onLocateRequested: () -> Unit,
     onPermissionGranted: () -> Unit,
     onCameraMoveHandled: () -> Unit,
+    onFitRouteHandled: () -> Unit,
     onResumed: () -> Unit,
     onPaused: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     var askedForPermission by remember { mutableStateOf(false) }
-    val alreadyGranted = remember {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
-            PackageManager.PERMISSION_GRANTED
-    }
+    var granted by remember { mutableStateOf(hasLocationPermission(context)) }
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted -> if (granted) onPermissionGranted() }
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { results ->
+        granted = results.values.any { it }
+        if (granted) onPermissionGranted()
+    }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { onResumed() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { onPaused() }
 
-    // Ask a beat after the map is on screen, and only when there is something
-    // to ask for. Re-requesting an already-granted permission returns granted
-    // immediately, which previously re-centred the map on every launch and
-    // discarded the position the user had left it at.
     LaunchedEffect(state.camera != null) {
-        if (state.camera != null && !askedForPermission && !alreadyGranted) {
+        if (state.camera != null && !askedForPermission && !granted) {
             askedForPermission = true
-            permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+            permissionLauncher.launch(LOCATION_PERMISSIONS)
         }
     }
 
@@ -101,22 +109,23 @@ fun MapScreen(
                 decorations = state.decorations,
                 initialCamera = camera,
                 darkTheme = darkTheme,
+                locationEnabled = granted,
+                bottomInset = bottomInset,
                 onCameraIdle = onCameraIdle,
                 onVehicleTapped = onVehicleTapped,
                 onStopTapped = onStopTapped,
                 moveTo = state.moveCameraTo?.let { LatLng(it.latitude, it.longitude) },
                 onMoveHandled = onCameraMoveHandled,
+                fitRoute = state.fitRoute,
+                onFitRouteHandled = onFitRouteHandled,
                 modifier = Modifier.fillMaxSize(),
             )
         }
         MapOverlays(
             state = state,
+            bottomInset = bottomInset,
             onLocateRequested = {
-                if (alreadyGranted) {
-                    onLocateRequested()
-                } else {
-                    permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
-                }
+                if (granted) onLocateRequested() else permissionLauncher.launch(LOCATION_PERMISSIONS)
             },
             modifier = Modifier.fillMaxSize().safeDrawingPadding(),
         )
@@ -127,6 +136,7 @@ fun MapScreen(
 @Composable
 private fun MapOverlays(
     state: MapUiState,
+    bottomInset: Dp,
     onLocateRequested: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -149,7 +159,9 @@ private fun MapOverlays(
         }
         FloatingActionButton(
             onClick = onLocateRequested,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = FAB_MARGIN, bottom = FAB_MARGIN + bottomInset),
         ) {
             Icon(
                 imageVector = Icons.Filled.MyLocation,
@@ -174,3 +186,21 @@ private fun MapPill(text: String, modifier: Modifier = Modifier) {
             .padding(horizontal = 14.dp, vertical = 8.dp),
     )
 }
+
+/**
+ * Both location permissions, requested together.
+ *
+ * Fine location is what the app wants — approximate can be kilometres out,
+ * which is useless for finding your own stop. Coarse is requested alongside
+ * it because Android's dialog offers the user a choice between them, and the
+ * app still works, less precisely, if they pick approximate.
+ */
+private val LOCATION_PERMISSIONS = arrayOf(
+    Manifest.permission.ACCESS_FINE_LOCATION,
+    Manifest.permission.ACCESS_COARSE_LOCATION,
+)
+
+private fun hasLocationPermission(context: android.content.Context): Boolean =
+    LOCATION_PERMISSIONS.any { permission ->
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    }

@@ -23,7 +23,30 @@ data class TimetableUiState(
     /** Trip ids keyed by the journey's first departure, so columns can be opened. */
     val tripIdsByStart: Map<String, Long> = emptyMap(),
     val selectedGrouping: Int = 0,
-)
+) {
+    /**
+     * Whether a journey can be opened.
+     *
+     * Resolution is per journey rather than all-or-nothing: a timetable can
+     * list journeys the trips API does not return, and those rows should be
+     * inert while their neighbours stay tappable.
+     *
+     * @param journey the journey to test.
+     * @return true when a trip id is known for it.
+     */
+    fun isOpenable(journey: TimetableJourney): Boolean = tripIdFor(journey) != null
+
+    /**
+     * Finds the trip behind a journey.
+     *
+     * @param journey the journey the user tapped.
+     * @return the trip id, or null when it could not be matched.
+     */
+    fun tripIdFor(journey: TimetableJourney): Long? {
+        val start = journey.departureTime ?: return null
+        return tripIdsByStart["%02d:%02d".format(start.hour, start.minute)]
+    }
+}
 
 /**
  * Loads a service's full timetable.
@@ -59,18 +82,6 @@ class TimetableViewModel(
         load()
     }
 
-    /**
-     * Finds the trip behind a journey, so tapping it opens the same panel a
-     * bus does.
-     *
-     * @param journey the journey the user tapped.
-     * @return the trip id, or null when it could not be matched.
-     */
-    fun tripIdFor(journey: TimetableJourney): Long? {
-        val start = journey.departureTime ?: return null
-        return _state.value.tripIdsByStart["%02d:%02d".format(start.hour, start.minute)]
-    }
-
     private fun load() {
         viewModelScope.launch {
             try {
@@ -87,7 +98,10 @@ class TimetableViewModel(
 
     private suspend fun loadTripIds() {
         try {
-            val trips = repository.tripsForService(serviceId, LocalDate.now().toString())
+            val trips = repository.tripsForService(
+                serviceId = serviceId,
+                date = LocalDate.now().toString(),
+            )
             val byStart = trips
                 .mapNotNull { trip -> trip.start?.take(START_LENGTH)?.let { it to trip.id } }
                 .toMap()

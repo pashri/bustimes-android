@@ -3,8 +3,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- Coarse only: enough to centre the map and choose a starting bbox.
+    <!-- Precise location: approximate can be kilometres out, which is no use
+         for finding the stop you are standing at. Coarse is declared too
+         because Android's dialog offers the user a choice between them.
          No background location: polling stops when the app is not in front. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
