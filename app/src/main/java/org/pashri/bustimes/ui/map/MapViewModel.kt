@@ -9,8 +9,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.pashri.bustimes.data.db.FavouriteStop
+import org.pashri.bustimes.data.favourites.FavouritesRepository
 import org.pashri.bustimes.data.location.LocationProvider
 import org.pashri.bustimes.data.location.DevicePosition
 import org.pashri.bustimes.data.model.RouteGeometry
@@ -26,6 +29,16 @@ import org.pashri.bustimes.ui.selection.SelectionState
 /** Everything the map screen renders. */
 data class MapUiState(
     val camera: CameraState? = null,
+    /** ATCO codes of starred stops, so a star can be drawn filled. */
+    val favouriteCodes: Set<String> = emptySet(),
+    /**
+     * The favourites menu, in the order it should be drawn.
+     *
+     * Empty while the menu is closed. Settled once when it opens rather than
+     * tracked continuously, so entries do not move while being reached for.
+     */
+    val favouritesMenu: List<FavouriteStop> = emptyList(),
+    val favouritesMenuOpen: Boolean = false,
     val decorations: MapDecorations = MapDecorations(),
     val selection: SelectionState = SelectionState.None,
     val loadingVehicles: Boolean = false,
@@ -54,6 +67,7 @@ class MapViewModel(
     private val repository: BustimesRepository,
     private val cameraStore: CameraStore,
     private val locationProvider: LocationProvider,
+    private val favourites: FavouritesRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MapUiState())
@@ -103,6 +117,11 @@ class MapViewModel(
 
 
     init {
+        viewModelScope.launch {
+            favourites.favouriteCodes.collect { codes ->
+                _state.update { it.copy(favouriteCodes = codes) }
+            }
+        }
         viewModelScope.launch {
             // The remembered camera is only there to give the first frame
             // something real to show: a fix can take seconds, and a grey
@@ -225,12 +244,30 @@ class MapViewModel(
      * reason the user was looking.
      *
      * @param atcoCode the stop to select.
+     * @param knownName the stop's name when the caller already has it.
+     * @param knownLatitude the stop's position when the caller already has it.
+     * @param knownLongitude the stop's position when the caller already has it.
      */
-    fun onStopSelected(atcoCode: String) {
+    fun onStopSelected(
+        atcoCode: String,
+        knownName: String? = null,
+        knownLatitude: Double? = null,
+        knownLongitude: Double? = null,
+    ) {
         previousJourney = _state.value.selection as? SelectionState.Journey
+        val position = stopPosition(atcoCode)
         _state.update { current ->
             current.copy(
-                selection = SelectionState.Stop(atcoCode = atcoCode, name = stopName(atcoCode)),
+                selection = SelectionState.Stop(
+                    atcoCode = atcoCode,
+                    // A caller that already knows the stop wins over a lookup:
+                    // a favourite opened from a cold start is in neither the
+                    // loaded viewport nor any selected route, and inferring
+                    // from those left the panel titled with an ATCO code.
+                    name = knownName ?: stopName(atcoCode),
+                    latitude = knownLatitude ?: position?.get(1),
+                    longitude = knownLongitude ?: position?.get(0),
+                ),
                 decorations = current.decorations.copy(
                     selectedStopAtco = atcoCode,
                     routeDimmed = current.decorations.routeLegs.isNotEmpty(),
@@ -367,6 +404,72 @@ class MapViewModel(
     fun moveTo(latitude: Double, longitude: Double) {
         hasExplicitTarget = true
         _state.update { it.copy(moveCameraTo = DevicePosition(latitude, longitude)) }
+    }
+
+    /**
+     * Stars or un-stars the selected stop.
+     *
+     * The name and position are copied into the favourite so the menu can
+     * label and order itself with no request and no signal.
+     */
+    fun onToggleFavourite() {
+        val stop = _state.value.selection as? SelectionState.Stop ?: return
+        val latitude = stop.latitude
+        val longitude = stop.longitude
+        val name = stop.name
+        viewModelScope.launch {
+            if (stop.atcoCode in _state.value.favouriteCodes) {
+                favourites.remove(stop.atcoCode)
+            } else if (latitude != null && longitude != null && !name.isNullOrBlank()) {
+                favourites.add(
+                    atcoCode = stop.atcoCode,
+                    name = name,
+                    latitude = latitude,
+                    longitude = longitude,
+                )
+            }
+        }
+    }
+
+    /**
+     * Opens the favourites menu, ordering it from where the user is.
+     *
+     * The order is computed here and then left alone: recomputing it while
+     * the menu is open would shift the entry being reached for.
+     */
+    fun onFavouritesMenuOpened() {
+        viewModelScope.launch {
+            val here = locationProvider.lastKnown()
+            val ordered = FavouritesRepository.orderedFrom(
+                favourites = favourites.favourites.first(),
+                from = here,
+            )
+            _state.update { it.copy(favouritesMenu = ordered, favouritesMenuOpen = true) }
+        }
+    }
+
+    /** Closes the favourites menu. */
+    fun onFavouritesMenuClosed() {
+        _state.update { it.copy(favouritesMenuOpen = false, favouritesMenu = emptyList()) }
+    }
+
+    /**
+     * Opens a favourite: moves the map to it and selects it.
+     *
+     * The same panel a stop tapped on the map opens, so there is one idea of
+     * what a stop is rather than a separate favourites screen.
+     *
+     * @param favourite the starred stop chosen from the menu.
+     */
+    fun onFavouriteSelected(favourite: FavouriteStop) {
+        onFavouritesMenuClosed()
+        moveTo(latitude = favourite.latitude, longitude = favourite.longitude)
+        onStopSelected(
+            atcoCode = favourite.atcoCode,
+            knownName = favourite.name,
+            knownLatitude = favourite.latitude,
+            knownLongitude = favourite.longitude,
+        )
     }
 
     /** Acknowledges a camera move so it is not repeated. */
@@ -595,6 +698,22 @@ class MapViewModel(
             ?.takeIf { it.isNotBlank() }
     }
 
+    /**
+     * Finds a stop's position as `[lon, lat]`.
+     *
+     * Searches the selected route's calling points as well as the viewport's
+     * stops, for the same reason the name lookup does: a stop tapped in a
+     * journey's schedule is usually outside the loaded area.
+     */
+    private fun stopPosition(atcoCode: String): List<Double>? {
+        val decorations = _state.value.decorations
+        val onRoute = decorations.routeStops
+            .firstOrNull { it.stop.atcoCode == atcoCode }?.stop?.location
+        if (onRoute != null && onRoute.size >= 2) return onRoute
+        val onMap = decorations.stops.firstOrNull { it.atcoCode == atcoCode }
+        return onMap?.let { listOf(it.longitude, it.latitude) }
+    }
+
     private fun startPolling(initialDelayMillis: Long) {
         // Cancelling first is what stops a pan from stacking requests, and is
         // the equivalent of the AbortController the web map uses.
@@ -718,10 +837,11 @@ class MapViewModel(
         private val repository: BustimesRepository,
         private val cameraStore: CameraStore,
         private val locationProvider: LocationProvider,
+        private val favourites: FavouritesRepository,
     ) : ViewModelProvider.Factory {
 
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            MapViewModel(repository, cameraStore, locationProvider) as T
+            MapViewModel(repository, cameraStore, locationProvider, favourites) as T
     }
 }

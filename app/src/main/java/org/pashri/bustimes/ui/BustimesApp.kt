@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import org.pashri.bustimes.di.AppContainer
 import org.pashri.bustimes.ui.diagnostics.DiagnosticsScreen
 import org.pashri.bustimes.ui.map.MapScreen
+import org.pashri.bustimes.ui.favourites.FavouritesMenu
 import org.pashri.bustimes.ui.map.MapViewModel
 import org.pashri.bustimes.ui.selection.JourneyPanel
 import org.pashri.bustimes.ui.selection.SelectionState
@@ -201,6 +202,8 @@ private fun MapDestination(
                 onDepartureClicked = viewModel::onDepartureSelected,
                 onTimetableRequested = onTimetableRequested,
                 onHeaderClicked = viewModel::onRecentreRequested,
+                favouriteCodes = state.favouriteCodes,
+                onToggleFavourite = viewModel::onToggleFavourite,
             )
         },
     ) {
@@ -220,10 +223,34 @@ private fun MapDestination(
             onResumed = viewModel::onResumed,
             onPaused = viewModel::onPaused,
             onDiagnosticsRequested = onDiagnosticsRequested,
+            onFavouritesToggled = {
+                if (state.favouritesMenuOpen) {
+                    viewModel.onFavouritesMenuClosed()
+                } else {
+                    viewModel.onFavouritesMenuOpened()
+                }
+            },
             modifier = Modifier.fillMaxSize(),
+        )
+        // Drawn over the map rather than inside the sheet, so it expands from
+        // its own button and is not clipped by the sheet's bounds.
+        FavouritesMenu(
+            favourites = state.favouritesMenu,
+            visible = state.favouritesMenuOpen,
+            bottomPadding = FAVOURITES_MENU_BOTTOM + peekHeightFor(selection),
+            onFavouriteClicked = viewModel::onFavouriteSelected,
+            onDismiss = viewModel::onFavouritesMenuClosed,
         )
     }
 }
+
+/**
+ * Space beneath the favourites menu.
+ *
+ * Clears the two stacked buttons and the margins around them, so the menu's
+ * lowest entry sits just above the button that opened it.
+ */
+private val FAVOURITES_MENU_BOTTOM = 148.dp
 
 @Composable
 private fun SelectionContent(
@@ -232,6 +259,8 @@ private fun SelectionContent(
     onDepartureClicked: (Long?, Long?) -> Unit,
     onTimetableRequested: (Long) -> Unit,
     onHeaderClicked: () -> Unit,
+    favouriteCodes: Set<String>,
+    onToggleFavourite: () -> Unit,
 ) {
     when (selection) {
         SelectionState.None -> Unit
@@ -244,6 +273,8 @@ private fun SelectionContent(
         is SelectionState.Stop -> StopPanel(
             stop = selection,
             onDepartureClicked = onDepartureClicked,
+            isFavourite = selection.atcoCode in favouriteCodes,
+            onToggleFavourite = onToggleFavourite,
         )
     }
 }
