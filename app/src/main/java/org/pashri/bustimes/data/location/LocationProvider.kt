@@ -8,10 +8,36 @@ import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlin.coroutines.resume
+import kotlin.math.cos
+import kotlin.math.hypot
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /** A position on the ground. */
-data class DevicePosition(val latitude: Double, val longitude: Double)
+data class DevicePosition(val latitude: Double, val longitude: Double) {
+
+    /**
+     * Whether moving to this position from [other] is worth a camera move.
+     *
+     * Two fixes a few metres apart describe the same place, and easing the
+     * camera between them just makes the map twitch. The threshold is roughly
+     * the spacing of neighbouring bus stops, below which the same stops stay
+     * on screen anyway.
+     *
+     * @param other the position to compare against.
+     * @return true when the two are far enough apart to matter.
+     */
+    fun isFurtherThanAStopFrom(other: DevicePosition): Boolean {
+        val northing = (latitude - other.latitude) * METRES_PER_DEGREE_LATITUDE
+        val easting = (longitude - other.longitude) *
+            METRES_PER_DEGREE_LATITUDE * cos(Math.toRadians(latitude))
+        return hypot(easting, northing) > SIGNIFICANT_MOVE_METRES
+    }
+
+    private companion object {
+        const val METRES_PER_DEGREE_LATITUDE = 110_540.0
+        const val SIGNIFICANT_MOVE_METRES = 100.0
+    }
+}
 
 /**
  * Supplies the user's position.

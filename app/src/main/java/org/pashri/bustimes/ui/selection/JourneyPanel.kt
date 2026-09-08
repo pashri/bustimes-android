@@ -99,10 +99,10 @@ private fun JourneyHeader(
 
 @Composable
 private fun JourneySubtitle(journey: SelectionState.Journey) {
-    val progress = journey.vehicle?.progress
+    val nextStop = journey.nextStopName
     val subtitle = when {
         journey.untracked -> "Not tracked"
-        progress?.nextStop != null -> "Next stop ${progress.nextStop}"
+        nextStop != null -> "Next stop $nextStop"
         else -> journey.vehicle?.vehicle?.name
     }
     if (subtitle != null) {
@@ -119,8 +119,8 @@ private fun JourneySubtitle(journey: SelectionState.Journey) {
 }
 
 /** Turns the vehicle feed's delay in seconds into a lateness. */
-private fun latenessFromDelay(seconds: Int): Lateness {
-    val minutes = seconds / SECONDS_PER_MINUTE
+private fun latenessFromDelay(seconds: Double): Lateness {
+    val minutes = (seconds / SECONDS_PER_MINUTE).toLong()
     return when {
         minutes >= 1 -> Lateness.Late(minutes)
         minutes <= -1 -> Lateness.Early(-minutes)
@@ -193,4 +193,4 @@ fun PanelMessage(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-private const val SECONDS_PER_MINUTE = 60L
+private const val SECONDS_PER_MINUTE = 60.0
