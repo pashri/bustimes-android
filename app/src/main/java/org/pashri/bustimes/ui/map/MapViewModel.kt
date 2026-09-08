@@ -3,7 +3,7 @@ package org.pashri.bustimes.ui.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.pashri.bustimes.data.location.LocationProvider
 import org.pashri.bustimes.data.location.DevicePosition
+import org.pashri.bustimes.data.model.RouteGeometry
 import org.pashri.bustimes.data.model.StopFeature
 import org.pashri.bustimes.data.model.Trip
 import org.pashri.bustimes.data.model.Vehicle
@@ -284,7 +285,9 @@ class MapViewModel(
         viewModelScope.launch {
             try {
                 repository.serviceIdsBySlug(listOf(slug))[slug]?.let(onResolved)
-            } catch (error: IOException) {
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
                 // Nothing to open; leave the panel as it is.
             }
         }
@@ -373,13 +376,20 @@ class MapViewModel(
             val trip = repository.trip(tripId)
             applyTrip(tripId, trip, frameRoute)
             restartPinnedPolling()
-        } catch (error: IOException) {
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            // Deliberately broad. A malformed payload from one operator, or
+            // anything else unexpected, should leave a message in the sheet
+            // rather than taking the whole app down; the crash log keeps the
+            // detail so the cause can still be found.
             markJourneyFailed(tripId)
         }
     }
 
     private fun applyTrip(tripId: Long, trip: Trip, frameRoute: Boolean) {
         val times = trip.times ?: emptyList()
+        val geometry = RouteGeometry.forTimes(times)
         _state.update { current ->
             val selection = current.selection
             if (selection !is SelectionState.Journey || selection.tripId != tripId) {
@@ -389,7 +399,8 @@ class MapViewModel(
                 selection = selection.copy(trip = trip, loading = false),
                 fitRoute = current.fitRoute || frameRoute,
                 decorations = current.decorations.copy(
-                    routeLegs = times.mapNotNull { it.track },
+                    routeLegs = geometry.legs,
+                    routeIsApproximate = geometry.approximate,
                     routeStops = times,
                 ),
             )
@@ -442,7 +453,9 @@ class MapViewModel(
                     ),
                 )
             }
-        } catch (error: IOException) {
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
             // The schedule is still useful; leave the last known vehicle alone.
         }
     }
@@ -451,12 +464,14 @@ class MapViewModel(
         try {
             val board = repository.departures(atcoCode)
             updateStopSelection(atcoCode) { it.copy(board = board, loading = false) }
-        } catch (error: IOException) {
-            updateStopSelection(atcoCode) { it.copy(loading = false, unreadable = false) }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: DeparturesParseException) {
             // The upstream template has changed shape. Say so rather than
             // showing an empty board, which would look like "no more buses".
             updateStopSelection(atcoCode) { it.copy(loading = false, unreadable = true) }
+        } catch (error: Exception) {
+            updateStopSelection(atcoCode) { it.copy(loading = false, unreadable = false) }
         }
     }
 
@@ -517,7 +532,9 @@ class MapViewModel(
             highWaterMark.record(bounds, vehicles.size)
             bboxVehicles = vehicles
             applyVehicles()
-        } catch (error: IOException) {
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
             _state.update { it.copy(loadingVehicles = false, offline = true) }
         }
     }
@@ -564,7 +581,9 @@ class MapViewModel(
             val stops = repository.stopsInBox(bounds)
             fetchedStopsFor = bounds
             applyStops(stops)
-        } catch (error: IOException) {
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
             _state.update { it.copy(offline = true) }
         }
     }

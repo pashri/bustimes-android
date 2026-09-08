@@ -7,4 +7,6 @@
     <string name="departures_unreadable">Couldn\'t read the departure board</string>
     <string name="retry">Retry</string>
     <string name="offline_banner">Offline — showing saved data</string>
+    <string name="approximate_location_hint">Approximate location only — tap to enable precise</string>
+    <string name="diagnostics">Show diagnostics</string>
 </resources>

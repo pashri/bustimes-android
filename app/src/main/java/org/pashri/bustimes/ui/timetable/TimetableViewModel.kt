@@ -3,8 +3,8 @@ package org.pashri.bustimes.ui.timetable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import java.io.IOException
 import java.time.LocalDate
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.pashri.bustimes.data.model.Timetable
 import org.pashri.bustimes.data.model.TimetableJourney
-import org.pashri.bustimes.data.parse.TimetableParseException
 import org.pashri.bustimes.data.repo.BustimesRepository
 
 /** The timetable screen's state. */
@@ -88,9 +87,12 @@ class TimetableViewModel(
                 val timetable = repository.timetable(serviceId)
                 _state.update { it.copy(timetable = timetable, loading = false) }
                 loadTripIds()
-            } catch (error: IOException) {
-                _state.update { it.copy(loading = false, failed = true) }
-            } catch (error: TimetableParseException) {
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                // Covers a network failure, an upstream export change, and
+                // anything unforeseen: all of them mean the same thing to the
+                // reader, and none of them should end the process.
                 _state.update { it.copy(loading = false, failed = true) }
             }
         }
@@ -106,7 +108,9 @@ class TimetableViewModel(
                 .mapNotNull { trip -> trip.start?.take(START_LENGTH)?.let { it to trip.id } }
                 .toMap()
             _state.update { it.copy(tripIdsByStart = byStart) }
-        } catch (error: IOException) {
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
             // Tappable columns are a bonus; the timetable is useful without them.
         }
     }

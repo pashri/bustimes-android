@@ -82,6 +82,14 @@ object MapLayers {
         lineJoin(Property.LINE_JOIN_ROUND),
     )
 
+    /**
+     * Dash pattern for a line that only joins stops.
+     *
+     * Applied when a service has no road geometry, so the line reads as the
+     * order of the calling points rather than as the road the bus drives.
+     */
+    fun dashedRoute(): Array<Float> = arrayOf(DASH_ON, DASH_OFF)
+
     /** Calling points of the selected route. */
     fun routeStops(): SymbolLayer = SymbolLayer(LAYER_ROUTE_STOPS, SOURCE_ROUTE_STOPS)
         .withProperties(
@@ -211,6 +219,8 @@ object MapLayers {
             literal(otherwise),
         )
 
+    private const val DASH_ON = 1.6f
+    private const val DASH_OFF = 1.4f
     private const val ROUTE_WIDTH = 4.5f
     private const val ROUTE_CASING_WIDTH = 8.0f
     private const val LABEL_SIZE = 11.0f

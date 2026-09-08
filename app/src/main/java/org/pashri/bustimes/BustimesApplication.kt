@@ -1,6 +1,7 @@
 package org.pashri.bustimes
 
 import android.app.Application
+import org.pashri.bustimes.data.diagnostics.installCrashLogging
 import org.pashri.bustimes.di.AppContainer
 
 /**
@@ -15,5 +16,6 @@ class BustimesApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        installCrashLogging(container.crashLog)
     }
 }
