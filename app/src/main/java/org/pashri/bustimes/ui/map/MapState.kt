@@ -19,6 +19,16 @@ data class MapDecorations(
     val vehicles: List<Vehicle> = emptyList(),
     /** Road geometry of the selected trip, as `[lon, lat]` pairs per leg. */
     val routeLegs: List<List<List<Double>>> = emptyList(),
+    /**
+     * True when [routeLegs] joins stops in straight lines rather than
+     * following roads.
+     *
+     * Some services carry no road geometry at all — bustimes has none for
+     * them either — so the only line that can be drawn is stop to stop. It is
+     * drawn dashed, because a solid line would imply the bus takes that path
+     * across the fields.
+     */
+    val routeIsApproximate: Boolean = false,
     /** Dimmed when a stop on the route is selected, so context is kept. */
     val routeDimmed: Boolean = false,
     val selectedVehicleId: Long? = null,

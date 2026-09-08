@@ -10,7 +10,10 @@ import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -23,6 +26,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import kotlinx.coroutines.launch
 import org.pashri.bustimes.di.AppContainer
+import org.pashri.bustimes.ui.diagnostics.DiagnosticsScreen
 import org.pashri.bustimes.ui.map.MapScreen
 import org.pashri.bustimes.ui.map.MapViewModel
 import org.pashri.bustimes.ui.selection.JourneyPanel
@@ -35,6 +39,7 @@ import org.pashri.bustimes.ui.timetable.TimetableViewModel
 private object Routes {
     const val MAP = "map"
     const val TIMETABLE = "timetable/{serviceId}"
+    const val DIAGNOSTICS = "diagnostics"
 
     fun timetable(serviceId: Long): String = "timetable/$serviceId"
 }
@@ -96,6 +101,18 @@ fun BustimesApp(
                 viewModel = mapViewModel,
                 darkTheme = darkTheme,
                 onTimetableRequested = { navController.navigate(Routes.timetable(it)) },
+                onDiagnosticsRequested = { navController.navigate(Routes.DIAGNOSTICS) },
+            )
+        }
+        composable(Routes.DIAGNOSTICS) {
+            var log by remember { mutableStateOf(container.crashLog.read()) }
+            DiagnosticsScreen(
+                log = log,
+                onBack = { navController.popBackStack() },
+                onClear = {
+                    container.crashLog.clear()
+                    log = null
+                },
             )
         }
         composable(
@@ -132,6 +149,7 @@ private fun MapDestination(
     viewModel: MapViewModel,
     darkTheme: Boolean,
     onTimetableRequested: (Long) -> Unit,
+    onDiagnosticsRequested: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val sheetState = rememberStandardBottomSheetState(
@@ -190,6 +208,7 @@ private fun MapDestination(
             onFitRouteHandled = viewModel::onFitRouteHandled,
             onResumed = viewModel::onResumed,
             onPaused = viewModel::onPaused,
+            onDiagnosticsRequested = onDiagnosticsRequested,
             modifier = Modifier.fillMaxSize(),
         )
     }

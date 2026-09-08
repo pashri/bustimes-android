@@ -4,12 +4,15 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.view.Gravity
 import android.view.animation.LinearInterpolator
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -75,10 +78,17 @@ fun BustimesMap(
     val lifecycleOwner = LocalLifecycleOwner.current
     val controller = remember { MapController(density.density) }
     val insetPx = with(density) { bottomInset.roundToPx() }
+    // The locate button sits inside safeDrawingPadding, but the map view runs
+    // edge to edge and its compass margins are measured from the view's own
+    // bottom. Without adding the system inset the compass lands roughly a
+    // navigation bar too low, which put it underneath the button.
+    val safeDrawing = WindowInsets.safeDrawing
+    val systemBottomPx = safeDrawing.getBottom(density)
+    val systemRightPx = safeDrawing.getRight(density, LocalLayoutDirection.current)
     val compassBottomPx = with(density) {
-        (bottomInset + FAB_MARGIN + FAB_SIZE + COMPASS_GAP).roundToPx()
+        systemBottomPx + (bottomInset + FAB_MARGIN + FAB_SIZE + COMPASS_GAP).roundToPx()
     }
-    val compassRightPx = with(density) { FAB_MARGIN.roundToPx() }
+    val compassRightPx = with(density) { systemRightPx + FAB_MARGIN.roundToPx() }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event -> controller.onLifecycleEvent(event) }
@@ -268,7 +278,7 @@ private class MapController(private val density: Float) {
             ?.setGeoJson(MapGeoJson.routeLines(decorations.routeLegs))
         source(style, MapLayers.SOURCE_ROUTE_STOPS)
             ?.setGeoJson(MapGeoJson.routeStops(decorations.routeStops))
-        applyRouteDimming(style, decorations.routeDimmed)
+        applyRouteStyle(style, decorations)
         startTween(decorations)
     }
 
@@ -400,15 +410,23 @@ private class MapController(private val density: Float) {
     }
 
     /**
-     * Dims the route rather than removing it when a stop on it is selected, so
-     * the reason you were looking at that stop stays on screen.
+     * Sets the route line's opacity and dash pattern.
+     *
+     * Dimming keeps the route on screen, rather than removing it, when a stop
+     * on it is selected, so the reason you were looking at that stop stays
+     * visible. Dashing marks a line that only joins the calling points.
      */
-    private fun applyRouteDimming(style: Style, dimmed: Boolean) {
-        val opacity = if (dimmed) DIMMED_OPACITY else 1.0f
-        style.getLayer(MapLayers.LAYER_ROUTE)
-            ?.setProperties(PropertyFactory.lineOpacity(opacity))
-        style.getLayer(MapLayers.LAYER_ROUTE_CASING)
-            ?.setProperties(PropertyFactory.lineOpacity(opacity * CASING_FACTOR))
+    private fun applyRouteStyle(style: Style, decorations: MapDecorations) {
+        val opacity = if (decorations.routeDimmed) DIMMED_OPACITY else 1.0f
+        val dashes = if (decorations.routeIsApproximate) MapLayers.dashedRoute() else null
+        style.getLayer(MapLayers.LAYER_ROUTE)?.setProperties(
+            PropertyFactory.lineOpacity(opacity),
+            PropertyFactory.lineDasharray(dashes ?: SOLID),
+        )
+        style.getLayer(MapLayers.LAYER_ROUTE_CASING)?.setProperties(
+            PropertyFactory.lineOpacity(opacity * CASING_FACTOR),
+            PropertyFactory.lineDasharray(dashes?.let { CASING_DASH } ?: SOLID),
+        )
     }
 
     private fun source(style: Style, id: String): GeoJsonSource? = style.getSourceAs(id)
@@ -464,6 +482,12 @@ private class MapController(private val density: Float) {
         const val DIMMED_OPACITY = 0.35f
         const val CASING_FACTOR = 0.8f
         const val ROUTE_PADDING_DP = 48f
+
+        /** A single long dash is how the spec expresses an unbroken line. */
+        val SOLID = arrayOf(1f)
+
+        /** Slightly wider gaps, so the white casing does not fill the dashes. */
+        val CASING_DASH = arrayOf(1.4f, 1.6f)
     }
 }
 

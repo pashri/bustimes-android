@@ -1,6 +1,7 @@
 package org.pashri.bustimes.di
 
 import android.content.Context
+import org.pashri.bustimes.data.diagnostics.CrashLog
 import org.pashri.bustimes.data.location.LocationProvider
 import org.pashri.bustimes.data.net.buildHttpClient
 import org.pashri.bustimes.data.prefs.CameraStore
@@ -17,6 +18,9 @@ import org.pashri.bustimes.ui.timetable.TimetableViewModel
 class AppContainer(context: Context) {
 
     private val httpClient = buildHttpClient(context.cacheDir)
+
+    /** Records crashes so a rare one can be read after it happens. */
+    val crashLog = CrashLog(context.filesDir)
 
     /** Reads from bustimes.org. */
     val repository = BustimesRepository(httpClient)
