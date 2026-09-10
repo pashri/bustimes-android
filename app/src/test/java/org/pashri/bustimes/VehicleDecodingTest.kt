@@ -85,6 +85,20 @@ class VehicleDecodingTest {
     }
 
     @Test
+    fun `the bbox form carries a timestamp for every vehicle`() {
+        // Vehicle's KDoc says the bounding-box form omits delay and progress.
+        // It says nothing about datetime, and the staleness shown on the map
+        // depends entirely on it being there, so it is asserted against a
+        // real recorded response rather than assumed.
+        val vehicles = json.decodeFromString<List<Vehicle>>(fixture("vehicles_bbox.json"))
+
+        assertEquals(95, vehicles.size)
+        assertTrue(vehicles.all { !it.datetime.isNullOrBlank() })
+        assertTrue(vehicles.none { it.delay != null })
+        assertTrue(vehicles.none { it.progress != null })
+    }
+
+    @Test
     fun `a service slug is read out of its url`() {
         val decoded = json.decodeFromString<Vehicle>(
             """{"id":1,"coordinates":[0.1,52.2],

@@ -21,6 +21,7 @@ import org.pashri.bustimes.data.model.StopFeature
 import org.pashri.bustimes.data.model.Trip
 import org.pashri.bustimes.data.model.Vehicle
 import org.pashri.bustimes.data.net.BoundingBox
+import org.pashri.bustimes.data.net.ClockSkew
 import org.pashri.bustimes.data.parse.DeparturesParseException
 import org.pashri.bustimes.data.prefs.CameraStore
 import org.pashri.bustimes.data.repo.BustimesRepository
@@ -81,6 +82,7 @@ class MapViewModel(
     private var stopsJob: Job? = null
     private var selectionJob: Job? = null
     private var pinnedJob: Job? = null
+    private var stalenessJob: Job? = null
     private var fetchedStopsFor: BoundingBox? = null
 
     /** Bbox vehicles, before the pinned selection is merged in. */
@@ -164,6 +166,10 @@ class MapViewModel(
 
     /** Starts or resumes polling; called when the screen becomes visible. */
     fun onResumed() {
+        // Started before the early return, and regardless of zoom: whatever
+        // is already on screen was drawn some time ago and needs to be aged
+        // now rather than when the first response of this session lands.
+        startStalenessTicker()
         val camera = _state.value.camera ?: return
         if (camera.showsVehicles) {
             startPolling(initialDelayMillis = 0)
@@ -182,6 +188,8 @@ class MapViewModel(
         stopPolling()
         pinnedJob?.cancel()
         pinnedJob = null
+        stalenessJob?.cancel()
+        stalenessJob = null
     }
 
     /**
@@ -712,6 +720,31 @@ class MapViewModel(
         if (onRoute != null && onRoute.size >= 2) return onRoute
         val onMap = decorations.stops.firstOrNull { it.atcoCode == atcoCode }
         return onMap?.let { listOf(it.longitude, it.latitude) }
+    }
+
+    /**
+     * Keeps every drawn position's age advancing.
+     *
+     * Ages are measured against [MapDecorations.nowMillis], so without this
+     * they would only move when a poll landed — and [pollVehiclesOnce]
+     * deliberately swallows its failures to keep the last known picture on
+     * screen. A dropped network would therefore leave a fleet frozen at
+     * whatever age it had when the last request succeeded, drawn at full
+     * confidence: exactly the misreading this is all meant to prevent.
+     *
+     * Running it on its own timer means a stale position keeps fading and
+     * loses its arrow whether the feed went quiet or this app did.
+     */
+    private fun startStalenessTicker() {
+        stalenessJob?.cancel()
+        stalenessJob = viewModelScope.launch {
+            while (true) {
+                _state.update {
+                    it.copy(decorations = it.decorations.copy(nowMillis = ClockSkew.now()))
+                }
+                delay(MapDefaults.VEHICLE_POLL_MILLIS)
+            }
+        }
     }
 
     private fun startPolling(initialDelayMillis: Long) {

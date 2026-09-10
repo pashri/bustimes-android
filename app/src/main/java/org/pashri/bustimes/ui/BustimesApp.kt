@@ -198,6 +198,7 @@ private fun MapDestination(
         sheetContent = {
             SelectionContent(
                 selection = selection,
+                nowMillis = state.decorations.nowMillis,
                 onStopClicked = viewModel::onStopSelected,
                 onDepartureClicked = viewModel::onDepartureSelected,
                 onTimetableRequested = onTimetableRequested,
@@ -255,6 +256,7 @@ private val FAVOURITES_MENU_BOTTOM = 148.dp
 @Composable
 private fun SelectionContent(
     selection: SelectionState,
+    nowMillis: Long,
     onStopClicked: (String) -> Unit,
     onDepartureClicked: (Long?, Long?) -> Unit,
     onTimetableRequested: (Long) -> Unit,
@@ -266,6 +268,7 @@ private fun SelectionContent(
         SelectionState.None -> Unit
         is SelectionState.Journey -> JourneyPanel(
             journey = selection,
+            nowMillis = nowMillis,
             onStopClicked = onStopClicked,
             onLineClicked = onTimetableRequested,
             onHeaderClicked = onHeaderClicked,
