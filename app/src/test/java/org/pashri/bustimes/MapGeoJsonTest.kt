@@ -1,11 +1,14 @@
 package org.pashri.bustimes
 
+import java.time.OffsetDateTime
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.pashri.bustimes.data.model.Freshness
 import org.pashri.bustimes.data.model.Vehicle
 import org.pashri.bustimes.data.model.VehicleDetail
+import org.pashri.bustimes.data.repo.BustimesRepository
 import org.pashri.bustimes.ui.map.MapDecorations
 import org.pashri.bustimes.ui.map.MapGeoJson
 import org.pashri.bustimes.ui.map.SiblingRoute
@@ -57,7 +60,12 @@ class MapGeoJsonTest {
     fun `only buses off the focused service are flagged as dimmed`() {
         val buses = listOf(bus(1, serviceId = 10), bus(2, serviceId = 10), bus(3, serviceId = 99))
 
-        val collection = MapGeoJson.vehicles(buses, selectedId = 1, dimOtherServices = 10)
+        val collection = MapGeoJson.vehicles(
+            buses,
+            selectedId = 1,
+            nowMillis = 0L,
+            dimOtherServices = 10,
+        )
         val dimmed = collection.features()!!.map {
             it.getBooleanProperty(MapGeoJson.PROPERTY_DIMMED)
         }
@@ -71,11 +79,75 @@ class MapGeoJsonTest {
     fun `nothing is dimmed when no service is focused`() {
         val buses = listOf(bus(1, serviceId = 10), bus(2, serviceId = 99))
 
-        val collection = MapGeoJson.vehicles(buses, selectedId = null, dimOtherServices = null)
+        val collection = MapGeoJson.vehicles(
+            buses,
+            selectedId = null,
+            nowMillis = 0L,
+            dimOtherServices = null,
+        )
 
         assertTrue(
             collection.features()!!.none { it.getBooleanProperty(MapGeoJson.PROPERTY_DIMMED) },
         )
+    }
+
+    @Test
+    fun `a stale position is faded and loses its arrow, a fresh one neither`() {
+        val fresh = bus(1).copy(datetime = "2026-09-10T13:39:30+01:00")
+        val stale = bus(2).copy(datetime = "2026-09-10T13:35:00+01:00")
+        val now = OffsetDateTime.parse("2026-09-10T13:40:00+01:00")
+            .toInstant().toEpochMilli()
+
+        val features = MapGeoJson.vehicles(
+            listOf(fresh, stale),
+            selectedId = null,
+            nowMillis = now,
+        ).features()!!
+
+        // 30s old, then 300s old: full opacity with an arrow, against the
+        // five-minute point on the ramp with the arrow withdrawn.
+        assertEquals(1.0f, features[0].getNumberProperty(MapGeoJson.PROPERTY_OPACITY).toFloat(), 0.005f)
+        assertFalse(features[0].getBooleanProperty(MapGeoJson.PROPERTY_STALE))
+        assertEquals(
+            0.7562f,
+            features[1].getNumberProperty(MapGeoJson.PROPERTY_OPACITY).toFloat(),
+            0.005f,
+        )
+        assertTrue(features[1].getBooleanProperty(MapGeoJson.PROPERTY_STALE))
+    }
+
+    @Test
+    fun `a bus with no timestamp is drawn as current`() {
+        val now = OffsetDateTime.parse("2026-09-10T13:40:00+01:00")
+            .toInstant().toEpochMilli()
+
+        val features = MapGeoJson.vehicles(
+            listOf(bus(1)),
+            selectedId = null,
+            nowMillis = now,
+        ).features()!!
+
+        // Never observed in a real response, but treating a missing timestamp
+        // as ancient would fade out an entire operator on a feed change.
+        assertEquals(1.0f, features[0].getNumberProperty(MapGeoJson.PROPERTY_OPACITY).toFloat(), 0.005f)
+        assertFalse(features[0].getBooleanProperty(MapGeoJson.PROPERTY_STALE))
+    }
+
+    @Test
+    fun `every bus in a real bbox response can be aged`() {
+        val vehicles = BustimesRepository.defaultJson
+            .decodeFromString<List<Vehicle>>(fixture("vehicles_bbox.json"))
+        val now = OffsetDateTime.parse("2026-09-10T13:40:00+01:00")
+            .toInstant().toEpochMilli()
+
+        val features = MapGeoJson.vehicles(vehicles, selectedId = null, nowMillis = now)
+            .features()!!
+
+        // The whole map half of this feature rests on the bbox form carrying
+        // a timestamp, so an upstream change that dropped it should fail here
+        // rather than quietly drawing a stale fleet at full confidence.
+        assertEquals(95, features.size)
+        assertTrue(vehicles.all { Freshness.ageSeconds(it.datetime, now) != null })
     }
 
     @Test
@@ -144,6 +216,20 @@ class MapDecorationsTest {
 
         assertEquals(1, cleared.vehicles.size)
         assertEquals(null, cleared.focusedServiceId)
+    }
+
+    @Test
+    fun `clearing a selection keeps the clock the buses are aged against`() {
+        // Dropping it would reset every position to an unknown age, so
+        // closing the sheet would redraw a stale fleet as current until the
+        // next tick — the same class of bug as the fields above.
+        val decorated = MapDecorations(
+            vehicles = listOf(dimmableBus()),
+            selectedVehicleId = 1L,
+            nowMillis = 1_757_509_200_000L,
+        )
+
+        assertEquals(1_757_509_200_000L, decorated.withoutSelection().nowMillis)
     }
 
     private fun dimmableBus() = Vehicle(id = 1, coordinates = listOf(0.1, 52.2), serviceId = 1)

@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.pashri.bustimes.data.model.Freshness
 import org.pashri.bustimes.data.model.StopTime
 
 /**
@@ -30,6 +31,8 @@ import org.pashri.bustimes.data.model.StopTime
  * rather than as missing data.
  *
  * @param journey the selected journey and its loaded schedule.
+ * @param nowMillis the clock the vehicle's position is aged against, shared
+ *   with the map so both cannot disagree about the same bus.
  * @param onStopClicked called with an ATCO code when a calling point is tapped.
  * @param onLineClicked called with the service id when the line number is tapped.
  * @param onHeaderClicked called when the header is tapped, to recentre the map.
@@ -38,6 +41,7 @@ import org.pashri.bustimes.data.model.StopTime
 @Composable
 fun JourneyPanel(
     journey: SelectionState.Journey,
+    nowMillis: Long,
     onStopClicked: (String) -> Unit,
     onLineClicked: (Long) -> Unit,
     onHeaderClicked: () -> Unit,
@@ -46,6 +50,7 @@ fun JourneyPanel(
     Column(modifier = modifier.fillMaxWidth()) {
         JourneyHeader(
             journey = journey,
+            nowMillis = nowMillis,
             onLineClicked = onLineClicked,
             onHeaderClicked = onHeaderClicked,
         )
@@ -70,6 +75,7 @@ fun JourneyPanel(
 @Composable
 private fun JourneyHeader(
     journey: SelectionState.Journey,
+    nowMillis: Long,
     onLineClicked: (Long) -> Unit,
     onHeaderClicked: () -> Unit,
 ) {
@@ -92,13 +98,13 @@ private fun JourneyHeader(
                 text = journey.headsign.orEmpty(),
                 style = MaterialTheme.typography.titleMedium,
             )
-            JourneySubtitle(journey = journey)
+            JourneySubtitle(journey = journey, nowMillis = nowMillis)
         }
     }
 }
 
 @Composable
-private fun JourneySubtitle(journey: SelectionState.Journey) {
+private fun JourneySubtitle(journey: SelectionState.Journey, nowMillis: Long) {
     val nextStop = journey.nextStopName
     val subtitle = when {
         journey.untracked -> "Not tracked"
@@ -112,9 +118,38 @@ private fun JourneySubtitle(journey: SelectionState.Journey) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    val delay = journey.vehicle?.delay
-    if (delay != null) {
-        LatenessLabel(lateness = latenessFromDelay(delay))
+    LivenessRow(journey = journey, nowMillis = nowMillis)
+}
+
+/**
+ * How the bus is running, and how long ago that was true.
+ *
+ * The age sits next to the lateness rather than on its own row because it
+ * qualifies it: a delay is computed from a position, so a figure taken from a
+ * fix five minutes old is itself five minutes old. Shown whenever a vehicle
+ * is reporting, even when current — saying nothing would leave the reader
+ * unable to tell a fresh position from an app that never mentions freshness.
+ */
+@Composable
+private fun LivenessRow(journey: SelectionState.Journey, nowMillis: Long) {
+    val vehicle = journey.vehicle ?: return
+    val age = Freshness.ageSeconds(datetime = vehicle.datetime, nowMillis = nowMillis)
+    val delay = vehicle.delay
+    // Neutral, so the age never competes with the lateness for attention.
+    val ageColour = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (delay != null) {
+            LatenessLabel(
+                lateness = latenessFromDelay(delay),
+                stale = Freshness.isStale(age),
+            )
+            Text(text = "·", style = MaterialTheme.typography.labelMedium, color = ageColour)
+        }
+        Text(
+            text = Freshness.describeAge(age),
+            style = MaterialTheme.typography.labelMedium,
+            color = ageColour,
+        )
     }
 }
 
