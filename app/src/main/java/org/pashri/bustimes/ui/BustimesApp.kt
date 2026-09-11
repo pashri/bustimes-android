@@ -205,6 +205,7 @@ private fun MapDestination(
                 onHeaderClicked = viewModel::onRecentreRequested,
                 favouriteCodes = state.favouriteCodes,
                 onToggleFavourite = viewModel::onToggleFavourite,
+                onDeparturesRetryRequested = viewModel::onDeparturesRetryRequested,
             )
         },
     ) {
@@ -263,6 +264,7 @@ private fun SelectionContent(
     onHeaderClicked: () -> Unit,
     favouriteCodes: Set<String>,
     onToggleFavourite: () -> Unit,
+    onDeparturesRetryRequested: () -> Unit,
 ) {
     when (selection) {
         SelectionState.None -> Unit
@@ -278,6 +280,7 @@ private fun SelectionContent(
             onDepartureClicked = onDepartureClicked,
             isFavourite = selection.atcoCode in favouriteCodes,
             onToggleFavourite = onToggleFavourite,
+            onRetryRequested = onDeparturesRetryRequested,
         )
     }
 }

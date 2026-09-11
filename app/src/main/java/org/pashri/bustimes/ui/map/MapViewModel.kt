@@ -22,10 +22,10 @@ import org.pashri.bustimes.data.model.Trip
 import org.pashri.bustimes.data.model.Vehicle
 import org.pashri.bustimes.data.net.BoundingBox
 import org.pashri.bustimes.data.net.ClockSkew
-import org.pashri.bustimes.data.parse.DeparturesParseException
 import org.pashri.bustimes.data.prefs.CameraStore
 import org.pashri.bustimes.data.repo.BustimesRepository
 import org.pashri.bustimes.ui.selection.SelectionState
+import org.pashri.bustimes.ui.selection.boardStateAfter
 
 /** Everything the map screen renders. */
 data class MapUiState(
@@ -69,6 +69,7 @@ class MapViewModel(
     private val cameraStore: CameraStore,
     private val locationProvider: LocationProvider,
     private val favourites: FavouritesRepository,
+    private val now: () -> Long = ClockSkew::now,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MapUiState())
@@ -83,6 +84,17 @@ class MapViewModel(
     private var selectionJob: Job? = null
     private var pinnedJob: Job? = null
     private var stalenessJob: Job? = null
+
+    /**
+     * Repeats the selected stop's departure fetch every
+     * [MapDefaults.DEPARTURES_REFRESH_MILLIS].
+     *
+     * Kept separate from [selectionJob], which carries the one-shot initial
+     * load for both a stop and a journey and is reassigned on every
+     * selection: cancelling it on pause would also cancel unrelated work in
+     * flight.
+     */
+    private var departuresJob: Job? = null
     private var fetchedStopsFor: BoundingBox? = null
 
     /** Bbox vehicles, before the pinned selection is merged in. */
@@ -170,11 +182,16 @@ class MapViewModel(
         // is already on screen was drawn some time ago and needs to be aged
         // now rather than when the first response of this session lands.
         startStalenessTicker()
-        val camera = _state.value.camera ?: return
-        if (camera.showsVehicles) {
+        val camera = _state.value.camera
+        if (camera != null && camera.showsVehicles) {
             startPolling(initialDelayMillis = 0)
         }
         restartPinnedPolling()
+        // Ungated by camera.showsVehicles: the stop panel is open regardless
+        // of zoom, so its refresh does not depend on the vehicle layer.
+        if (_state.value.selection is SelectionState.Stop) {
+            startDeparturesPolling()
+        }
     }
 
     /**
@@ -190,6 +207,8 @@ class MapViewModel(
         pinnedJob = null
         stalenessJob?.cancel()
         stalenessJob = null
+        departuresJob?.cancel()
+        departuresJob = null
     }
 
     /**
@@ -288,6 +307,7 @@ class MapViewModel(
         }
         selectionJob?.cancel()
         selectionJob = viewModelScope.launch { loadDepartures(atcoCode) }
+        startDeparturesPolling()
     }
 
     /**
@@ -317,6 +337,8 @@ class MapViewModel(
         selectionJob?.cancel()
         pinnedJob?.cancel()
         pinnedJob = null
+        departuresJob?.cancel()
+        departuresJob = null
         siblingJob?.cancel()
         siblingJob = null
         pinnedVehicle = null
@@ -492,6 +514,8 @@ class MapViewModel(
     private fun selectJourney(tripId: Long, vehicle: Vehicle?, frameRoute: Boolean) {
         previousJourney = null
         pinnedVehicle = vehicle
+        departuresJob?.cancel()
+        departuresJob = null
         _state.update { current ->
             current.copy(
                 selection = SelectionState.Journey(tripId = tripId, vehicle = vehicle),
@@ -509,6 +533,8 @@ class MapViewModel(
     private fun restoreJourney() {
         val journey = previousJourney ?: return
         previousJourney = null
+        departuresJob?.cancel()
+        departuresJob = null
         _state.update { current ->
             current.copy(
                 selection = journey.copy(vehicle = pinnedVehicle ?: journey.vehicle),
@@ -665,17 +691,47 @@ class MapViewModel(
     }
 
     private suspend fun loadDepartures(atcoCode: String) {
-        try {
-            val board = repository.departures(atcoCode)
-            updateStopSelection(atcoCode) { it.copy(board = board, loading = false) }
+        val result = try {
+            Result.success(repository.departures(atcoCode))
         } catch (error: CancellationException) {
             throw error
-        } catch (error: DeparturesParseException) {
-            // The upstream template has changed shape. Say so rather than
-            // showing an empty board, which would look like "no more buses".
-            updateStopSelection(atcoCode) { it.copy(loading = false, unreadable = true) }
         } catch (error: Exception) {
-            updateStopSelection(atcoCode) { it.copy(loading = false, unreadable = false) }
+            Result.failure(error)
+        }
+        updateStopSelection(atcoCode) { boardStateAfter(it, result, now()) }
+    }
+
+    /**
+     * Repeats [loadDepartures] every [MapDefaults.DEPARTURES_REFRESH_MILLIS].
+     *
+     * The first repeat waits a full interval, since [onStopSelected] already
+     * triggers the initial fetch through [selectionJob].
+     */
+    private fun startDeparturesPolling() {
+        departuresJob?.cancel()
+        val atcoCode = (_state.value.selection as? SelectionState.Stop)?.atcoCode ?: return
+        departuresJob = viewModelScope.launch {
+            while (true) {
+                delay(MapDefaults.DEPARTURES_REFRESH_MILLIS)
+                loadDepartures(atcoCode)
+            }
+        }
+    }
+
+    /**
+     * Retries a failed departure fetch, keeping the board already on screen.
+     *
+     * Bound to the stop panel's Retry action.
+     */
+    fun onDeparturesRetryRequested() {
+        val stop = _state.value.selection as? SelectionState.Stop ?: return
+        departuresJob?.cancel()
+        departuresJob = null
+        updateStopSelection(stop.atcoCode) { it.copy(loading = true) }
+        selectionJob?.cancel()
+        selectionJob = viewModelScope.launch {
+            loadDepartures(stop.atcoCode)
+            startDeparturesPolling()
         }
     }
 

@@ -35,6 +35,9 @@ or export, a test fails instead of the app silently going blank.
 - Polls only while the app is in the foreground, never in the background
 - 12 second interval, chained after each response rather than fixed, so a
   slow network self-throttles
+- A selected stop's departure board refreshes the same way every 30
+  seconds; a failed refresh keeps the board on screen and offers Retry
+  rather than blanking it
 - Refetches vehicles only when the viewport leaves the area already
   fetched, and cancels superseded requests in flight
 - Honours `max-age` and revalidates with `If-None-Match` /
