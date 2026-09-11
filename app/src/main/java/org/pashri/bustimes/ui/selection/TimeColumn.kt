@@ -9,6 +9,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 
+/**
+ * OpenType feature enabling tabular (fixed-width) digits.
+ *
+ * Without it, a live time refreshing beside an aimed time shifts horizontally
+ * as its digit widths change, which reads as jitter on every poll.
+ */
+private const val TABULAR_FIGURES = "tnum"
+
 /** Times arrive as `HH:MM`, sometimes with seconds attached. */
 private const val TIME_LENGTH = 5
 
@@ -72,10 +80,11 @@ fun TimeColumn(
 ) {
     val shown = presentTimes(aimed = aimed, live = live, cancelled = cancelled)
 
+    val timeStyle = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = TABULAR_FIGURES)
     Column(modifier = modifier, horizontalAlignment = alignment) {
         Text(
             text = shown.aimed,
-            style = MaterialTheme.typography.bodyMedium,
+            style = timeStyle,
             color = if (shown.isSingleTime) {
                 MaterialTheme.colorScheme.onSurface
             } else {
@@ -87,7 +96,7 @@ fun TimeColumn(
         if (shown.live != null) {
             Text(
                 text = shown.live,
-                style = MaterialTheme.typography.bodyMedium,
+                style = timeStyle,
                 fontWeight = FontWeight.Bold,
             )
         }

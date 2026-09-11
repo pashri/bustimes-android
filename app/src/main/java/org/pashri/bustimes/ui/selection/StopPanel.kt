@@ -26,7 +26,6 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import org.pashri.bustimes.R
@@ -238,16 +237,11 @@ private fun DepartureRow(departure: Departure, onDepartureClicked: (Long?, Long?
             .clickable(enabled = openable) {
                 onDepartureClicked(departure.tripId, departure.journeyId)
             }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = departure.lineName,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.width(52.dp),
-        )
+        LineBadge(lineName = departure.lineName)
         Column(modifier = Modifier.weight(1f)) {
             Text(text = departure.destination, style = MaterialTheme.typography.bodyLarge)
             if (departure.vehicle != null) {
