@@ -150,6 +150,33 @@ object MapGeoJson {
     }
 
     /**
+     * Builds the source for the ring marking the selected stop.
+     *
+     * Its own source, rather than a filter over the stop layers, because the
+     * selected stop is not always present in either of them: below the stop
+     * layer's minimum zoom, or before the surrounding viewport has loaded,
+     * there would be nothing to filter.
+     *
+     * @param stop the selected stop, if any.
+     * @return a single point feature, or an empty collection when nothing is
+     *   selected or the stop's position is unknown.
+     */
+    fun selectedStop(stop: SelectedStop?): FeatureCollection {
+        val longitude = stop?.longitude
+        val latitude = stop?.latitude
+        if (longitude == null || latitude == null) return empty()
+        val properties = JsonObject().apply {
+            addProperty(PROPERTY_ATCO, stop.atcoCode)
+        }
+        val feature = Feature.fromGeometry(
+            Point.fromLngLat(longitude, latitude),
+            properties,
+            stop.atcoCode,
+        )
+        return FeatureCollection.fromFeatures(listOf(feature))
+    }
+
+    /**
      * Builds the route line from a trip's per-leg road geometry.
      *
      * Each leg is kept as its own feature rather than concatenated, because

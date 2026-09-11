@@ -52,6 +52,7 @@ object MapLayers {
     const val SOURCE_ROUTE = "route-source"
     const val SOURCE_SIBLING_ROUTES = "sibling-routes-source"
     const val SOURCE_ROUTE_STOPS = "route-stops-source"
+    const val SOURCE_SELECTED_STOP = "selected-stop-source"
 
     const val LAYER_VEHICLES = "vehicles-layer"
     const val LAYER_VEHICLE_HEADINGS = "vehicle-headings-layer"
@@ -63,6 +64,7 @@ object MapLayers {
     const val LAYER_SIBLING_ROUTES = "sibling-routes-layer"
     const val LAYER_ROUTE_CASING_DASHED = "route-casing-dashed-layer"
     const val LAYER_ROUTE_STOPS = "route-stops-layer"
+    const val LAYER_SELECTED_STOP = "selected-stop-layer"
 
     /** Every source, created empty. */
     fun sources(): List<GeoJsonSource> = listOf(
@@ -70,6 +72,7 @@ object MapLayers {
         GeoJsonSource(SOURCE_ROUTE, MapGeoJson.empty()),
         GeoJsonSource(SOURCE_ROUTE_STOPS, MapGeoJson.empty()),
         GeoJsonSource(SOURCE_STOPS, MapGeoJson.empty()),
+        GeoJsonSource(SOURCE_SELECTED_STOP, MapGeoJson.empty()),
         GeoJsonSource(SOURCE_VEHICLES, MapGeoJson.empty()),
     )
 
@@ -144,6 +147,29 @@ object MapLayers {
         )
 
     /**
+     * The ring marking the selected stop.
+     *
+     * Drawn as a hollow circle around the stop rather than by restyling the
+     * stop itself, so it reads the same whether the stop is an ordinary one, a
+     * calling point on the selected route, or — below the zoom at which either
+     * layer draws — not on the map at all.
+     */
+    fun selectedStop(): CircleLayer =
+        CircleLayer(LAYER_SELECTED_STOP, SOURCE_SELECTED_STOP).withProperties(
+            circleOpacity(0.0f),
+            circleRadius(
+                Expression.interpolate(
+                    Expression.linear(),
+                    Expression.zoom(),
+                    Expression.stop(SELECTED_MIN_ZOOM_STEP, literal(SELECTED_STOP_MIN_RADIUS)),
+                    Expression.stop(SELECTED_MAX_ZOOM_STEP, literal(SELECTED_STOP_MAX_RADIUS)),
+                ),
+            ),
+            circleStrokeColor(SELECTED_STOP_COLOUR),
+            circleStrokeWidth(SELECTED_STOP_STROKE),
+        )
+
+    /**
      * Ordinary stops.
      *
      * A circle layer rather than a bitmap symbol so the radius can follow the
@@ -156,6 +182,8 @@ object MapLayers {
         .withProperties(
             circleColor(
                 Expression.switchCase(
+                    isSelected(),
+                    literal(SELECTED_STOP_COLOUR),
                     eq(get(MapGeoJson.PROPERTY_DIMMED), literal(true)),
                     literal(DIMMED_GREY),
                     literal(STOP_COLOUR),
@@ -172,6 +200,8 @@ object MapLayers {
             circleStrokeColor("#FFFFFF"),
             circleStrokeWidth(
                 Expression.switchCase(
+                    isSelected(),
+                    literal(STOP_STROKE),
                     eq(get(MapGeoJson.PROPERTY_DIMMED), literal(true)),
                     literal(0.0f),
                     literal(STOP_STROKE),
@@ -282,6 +312,10 @@ object MapLayers {
         .withFilter(notDimmed())
         .apply { minZoom = LABEL_MIN_ZOOM }
 
+    /** Matches only features flagged as the current selection. */
+    private fun isSelected(): Expression =
+        eq(get(MapGeoJson.PROPERTY_SELECTED), literal(true))
+
     /** Matches only features that are not being played down. */
     private fun notDimmed(): Expression =
         Expression.not(eq(get(MapGeoJson.PROPERTY_DIMMED), literal(true)))
@@ -352,6 +386,19 @@ object MapLayers {
     private const val STOP_STROKE = 1.5f
     private const val STOP_MIN_ZOOM_STEP = 13
     private const val STOP_MAX_ZOOM_STEP = 16
+
+    /**
+     * The selected stop's accent, used for both its ring and its own fill.
+     *
+     * Deliberately not the route's green or the stops' grey: the ring has to
+     * be tellable from a calling point it may be drawn around.
+     */
+    private const val SELECTED_STOP_COLOUR = "#D84315"
+    private const val SELECTED_STOP_STROKE = 3.0f
+    private const val SELECTED_STOP_MIN_RADIUS = 9.0f
+    private const val SELECTED_STOP_MAX_RADIUS = 14.0f
+    private const val SELECTED_MIN_ZOOM_STEP = 10
+    private const val SELECTED_MAX_ZOOM_STEP = 16
 
     private const val MIN_ICON_SCALE = 0.45f
     private const val MAX_ICON_SCALE = 1.0f

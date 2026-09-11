@@ -5,12 +5,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maplibre.geojson.Point
 import org.pashri.bustimes.data.model.Freshness
 import org.pashri.bustimes.data.model.Vehicle
 import org.pashri.bustimes.data.model.VehicleDetail
 import org.pashri.bustimes.data.repo.BustimesRepository
 import org.pashri.bustimes.ui.map.MapDecorations
 import org.pashri.bustimes.ui.map.MapGeoJson
+import org.pashri.bustimes.ui.map.SelectedStop
 import org.pashri.bustimes.ui.map.SiblingRoute
 
 class MapGeoJsonTest {
@@ -173,6 +175,31 @@ class MapGeoJsonTest {
     }
 
     @Test
+    fun `the selected stop is drawn at its own position`() {
+        val selected = SelectedStop(atcoCode = "0500CCITY001", longitude = 0.12, latitude = 52.2)
+
+        val features = MapGeoJson.selectedStop(selected).features()!!
+
+        assertEquals(1, features.size)
+        val point = features.first().geometry() as Point
+        assertEquals(0.12, point.longitude(), 0.0)
+        assertEquals(52.2, point.latitude(), 0.0)
+        assertEquals("0500CCITY001", features.first().id())
+    }
+
+    @Test
+    fun `nothing selected means no ring to draw`() {
+        assertTrue(MapGeoJson.selectedStop(null).features()!!.isEmpty())
+    }
+
+    @Test
+    fun `a selected stop with no known position draws no ring`() {
+        val selected = SelectedStop(atcoCode = "0500CCITY001", longitude = null, latitude = null)
+
+        assertTrue(MapGeoJson.selectedStop(selected).features()!!.isEmpty())
+    }
+
+    @Test
     fun `no siblings means nothing to draw`() {
         assertTrue(MapGeoJson.siblingRoutes(emptyList()).features()!!.isEmpty())
     }
@@ -189,7 +216,7 @@ class MapDecorationsTest {
             routeIsApproximate = true,
             routeDimmed = true,
             selectedVehicleId = 7L,
-            selectedStopAtco = "0500CCITY001",
+            selectedStop = SelectedStop("0500CCITY001", 0.12, 52.2),
             focusedServiceId = 8007L,
             siblingRoutes = listOf(SiblingRoute(1, emptyList(), "#FF0000")),
         )
@@ -202,7 +229,7 @@ class MapDecorationsTest {
         assertFalse(cleared.routeIsApproximate)
         assertFalse(cleared.routeDimmed)
         assertEquals(null, cleared.selectedVehicleId)
-        assertEquals(null, cleared.selectedStopAtco)
+        assertEquals(null, cleared.selectedStop)
         assertEquals(null, cleared.focusedServiceId)
         assertTrue(cleared.siblingRoutes.isEmpty())
         assertTrue(cleared.routeStops.isEmpty())
