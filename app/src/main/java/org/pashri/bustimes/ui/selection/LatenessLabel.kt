@@ -1,14 +1,12 @@
 package org.pashri.bustimes.ui.selection
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -18,14 +16,15 @@ import androidx.compose.ui.unit.dp
 private val LateColour = Color(0xFFB4530A)
 private val EarlyColour = Color(0xFF1B5E20)
 
-/** Diameter of the status dot placed before the lateness text. */
-private val DOT_SIZE = 6.dp
+/** Corner radius that reads as a pill at the label's height. */
+private val PILL_SHAPE = RoundedCornerShape(50)
 
 /**
  * Renders a one-line summary of how a service is running.
  *
- * A coloured dot precedes the text, so status is legible from colour alone
- * and not only from wording — useful at a glance across a list of rows.
+ * Shown as white text on a filled, coloured pill, so status is legible from
+ * colour and shape alone and not only from wording — useful at a glance
+ * across a list of rows.
  *
  * @param lateness the assessed lateness.
  * @param stale true when the figure was computed from a position old enough
@@ -47,17 +46,16 @@ fun LatenessLabel(
         lateness is Lateness.Early || lateness == Lateness.OnTime -> EarlyColour
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = modifier,
+    Box(
+        modifier = modifier
+            .background(color = colour, shape = PILL_SHAPE)
+            .padding(horizontal = 8.dp, vertical = 1.dp),
     ) {
-        Row(modifier = Modifier.size(DOT_SIZE).background(color = colour, shape = CircleShape)) {}
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium,
-            color = colour,
+            color = Color.White,
         )
     }
 }
