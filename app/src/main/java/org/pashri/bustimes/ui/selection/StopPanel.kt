@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -78,7 +79,7 @@ fun StopPanel(
                         stringResource(R.string.add_favourite)
                     },
                     tint = if (isFavourite) {
-                        MaterialTheme.colorScheme.primary
+                        MaterialTheme.colorScheme.tertiary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
@@ -228,12 +229,23 @@ private fun DepartureList(
     }
 }
 
+/**
+ * The height every departure row reserves.
+ *
+ * A row with a tracked vehicle and a lateness label runs to three lines of
+ * text; an untracked one is a single line. Without a shared minimum the list
+ * visibly jumps in row height as it scrolls past both kinds, so every row
+ * reserves the taller case and centers shorter content within it.
+ */
+private val DEPARTURE_ROW_MIN_HEIGHT = 76.dp
+
 @Composable
 private fun DepartureRow(departure: Departure, onDepartureClicked: (Long?, Long?) -> Unit) {
     val openable = departure.tripId != null || departure.journeyId != null
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = DEPARTURE_ROW_MIN_HEIGHT)
             .clickable(enabled = openable) {
                 onDepartureClicked(departure.tripId, departure.journeyId)
             }
