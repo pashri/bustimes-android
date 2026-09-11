@@ -102,12 +102,6 @@ data class TripPage(
     val results: List<Trip> = emptyList(),
 )
 
-/** A page of `/api/vehiclejourneys/`. */
-@Serializable
-data class VehicleJourneyPage(
-    val results: List<VehicleJourneySummary> = emptyList(),
-)
-
 /**
  * A tracked journey.
  *

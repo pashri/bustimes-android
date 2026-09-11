@@ -48,7 +48,7 @@ object Bustimes {
 
     /** One tracked journey, which is how a departure board links a live departure. */
     fun vehicleJourney(journeyId: Long): String =
-        "$BASE_URL/api/vehiclejourneys/?id=$journeyId&format=json"
+        "$BASE_URL/api/vehiclejourneys/$journeyId/?format=json"
 
     /** A stop's departure board. HTML fragment; there is no JSON equivalent. */
     fun departures(atcoCode: String): String = "$BASE_URL/stops/$atcoCode/departures"
