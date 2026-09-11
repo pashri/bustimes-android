@@ -27,6 +27,25 @@ object MapDefaults {
     /** Gap between vehicle polls, chained after each response lands. */
     const val VEHICLE_POLL_MILLIS = 12_000L
 
+    /**
+     * Gap between departure board refreshes, chained after each response lands.
+     *
+     * A stop's board ticks once a minute at most, so 12s would be five
+     * requests a minute for text that rarely changes, and 60s risks a full
+     * tick of staleness. 30s sits between the two.
+     */
+    const val DEPARTURES_REFRESH_MILLIS = 30_000L
+
+    /**
+     * Age, or time since a refresh failed, at which a loaded board is shown
+     * as stale with a warning and a Retry affordance.
+     *
+     * Three refresh cycles: one dropped response should not flash a warning,
+     * but a board stuck here for any reason — not only a parse or network
+     * failure — needs a way to recover.
+     */
+    const val BOARD_STALE_MILLIS = 90_000L
+
     /** Settling delay after a pan that needs fresh vehicles. */
     const val PAN_DEBOUNCE_MILLIS = 200L
 

@@ -84,10 +84,16 @@ sealed interface SelectionState {
      *
      * @property atcoCode the stop.
      * @property name the stop's name, when known.
-     * @property board the parsed board, once loaded.
-     * @property loading true while the board is being fetched.
-     * @property unreadable true when the board could not be parsed, which
-     *   means bustimes.org has changed its template.
+     * @property board the parsed board, once loaded. Kept across a failed
+     *   refresh rather than cleared, so a dropped request never blanks a
+     *   board the user is reading.
+     * @property loading true while a fetch is outstanding.
+     * @property loadedAt when [board] was last successfully fetched, in
+     *   [org.pashri.bustimes.data.net.ClockSkew] time. Unset by a failed
+     *   refresh, so the age shown always reflects the board actually on
+     *   screen.
+     * @property failure set when the most recent fetch failed. Cleared by
+     *   the next success.
      */
     data class Stop(
         val atcoCode: String,
@@ -104,7 +110,8 @@ sealed interface SelectionState {
         val longitude: Double? = null,
         val board: DepartureBoard? = null,
         val loading: Boolean = true,
-        val unreadable: Boolean = false,
+        val loadedAt: Long? = null,
+        val failure: DepartureFailure? = null,
     ) : SelectionState {
 
         /** True when this stop carries enough detail to be starred. */
