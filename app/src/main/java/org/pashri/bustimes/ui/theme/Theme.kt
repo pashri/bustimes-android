@@ -32,7 +32,14 @@ private val TransitBlueLight = Color(0xFF9FB2FF)
 
 private val LightColours = lightColorScheme(
     primary = Color(0xFF1B5E20),
+    primaryContainer = Color(0xFFC8E6C9),
+    onPrimaryContainer = Color(0xFF1B5E20),
     secondary = Color(0xFF37474F),
+    // Tied to the tertiary accent rather than derived from secondary, since
+    // this container is what the favourites FAB uses, and favouriting is
+    // already the accent's job everywhere else (the star, the line badge).
+    secondaryContainer = Color(0xFFDCE4FF),
+    onSecondaryContainer = TransitBlue,
     tertiary = TransitBlue,
     onTertiary = Color(0xFFFFFFFF),
     surface = Color(0xFFFAFAFA),
@@ -41,7 +48,11 @@ private val LightColours = lightColorScheme(
 
 private val DarkColours = darkColorScheme(
     primary = Color(0xFF81C784),
+    primaryContainer = Color(0xFF2E7D32),
+    onPrimaryContainer = Color(0xFFC8E6C9),
     secondary = Color(0xFFB0BEC5),
+    secondaryContainer = Color(0xFF1A2B6B),
+    onSecondaryContainer = TransitBlueLight,
     tertiary = TransitBlueLight,
     onTertiary = Color(0xFF00186B),
     surface = Color(0xFF1C1C1E),
