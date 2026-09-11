@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -17,7 +16,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.pashri.bustimes.data.model.Freshness
 import org.pashri.bustimes.data.model.StopTime
@@ -88,10 +86,11 @@ private fun JourneyHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        AssistChip(
-            onClick = { if (serviceId != null) onLineClicked(serviceId) },
-            enabled = serviceId != null,
-            label = { Text(text = journey.lineName ?: "—", fontWeight = FontWeight.Bold) },
+        LineBadge(
+            lineName = journey.lineName ?: "—",
+            modifier = Modifier.clickable(enabled = serviceId != null) {
+                if (serviceId != null) onLineClicked(serviceId)
+            },
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(

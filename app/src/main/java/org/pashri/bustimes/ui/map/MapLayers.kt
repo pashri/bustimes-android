@@ -90,7 +90,7 @@ object MapLayers {
 
     /** The coloured route line. */
     fun route(): LineLayer = LineLayer(LAYER_ROUTE, SOURCE_ROUTE).withProperties(
-        lineColor("#1B5E20"),
+        lineColor(ROUTE_COLOUR),
         lineWidth(ROUTE_WIDTH),
         lineCap(Property.LINE_CAP_ROUND),
         lineJoin(Property.LINE_JOIN_ROUND),
@@ -106,7 +106,7 @@ object MapLayers {
      * one visible at a time has no such ambiguity.
      */
     fun routeDashed(): LineLayer = LineLayer(LAYER_ROUTE_DASHED, SOURCE_ROUTE).withProperties(
-        lineColor("#1B5E20"),
+        lineColor(ROUTE_COLOUR),
         lineWidth(ROUTE_WIDTH),
         lineCap(Property.LINE_CAP_BUTT),
         lineJoin(Property.LINE_JOIN_ROUND),
@@ -427,10 +427,17 @@ object MapLayers {
     /**
      * The selected stop's accent, used for both its ring and its own fill.
      *
-     * Deliberately not the route's green or the stops' grey: the ring has to
-     * be tellable from a calling point it may be drawn around.
+     * Shared with [org.pashri.bustimes.ui.theme.BustimesTheme]'s tertiary
+     * accent, so a tap is tellable at a glance from the route's own mustard
+     * and from the stops' grey.
      */
-    private const val SELECTED_STOP_COLOUR = "#D84315"
+    private const val SELECTED_STOP_COLOUR = "#2D5DF0"
+
+    /**
+     * The selected route's own colour, shared by its line and its calling
+     * points ([MapIcons.stop]'s `onRoute` fill), so both read as one route.
+     */
+    private const val ROUTE_COLOUR = "#B8860B"
     private const val SELECTED_STOP_STROKE = 3.0f
     private const val SELECTED_STOP_MIN_RADIUS = 9.0f
     private const val SELECTED_STOP_MAX_RADIUS = 14.0f

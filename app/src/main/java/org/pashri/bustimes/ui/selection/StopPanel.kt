@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,7 +27,6 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import org.pashri.bustimes.R
@@ -79,7 +79,7 @@ fun StopPanel(
                         stringResource(R.string.add_favourite)
                     },
                     tint = if (isFavourite) {
-                        MaterialTheme.colorScheme.primary
+                        MaterialTheme.colorScheme.tertiary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
@@ -229,25 +229,31 @@ private fun DepartureList(
     }
 }
 
+/**
+ * The height every departure row reserves.
+ *
+ * A row with a tracked vehicle and a lateness label runs to three lines of
+ * text; an untracked one is a single line. Without a shared minimum the list
+ * visibly jumps in row height as it scrolls past both kinds, so every row
+ * reserves the taller case and centers shorter content within it.
+ */
+private val DEPARTURE_ROW_MIN_HEIGHT = 76.dp
+
 @Composable
 private fun DepartureRow(departure: Departure, onDepartureClicked: (Long?, Long?) -> Unit) {
     val openable = departure.tripId != null || departure.journeyId != null
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = DEPARTURE_ROW_MIN_HEIGHT)
             .clickable(enabled = openable) {
                 onDepartureClicked(departure.tripId, departure.journeyId)
             }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = departure.lineName,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.width(52.dp),
-        )
+        LineBadge(lineName = departure.lineName)
         Column(modifier = Modifier.weight(1f)) {
             Text(text = departure.destination, style = MaterialTheme.typography.bodyLarge)
             if (departure.vehicle != null) {

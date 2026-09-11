@@ -306,8 +306,8 @@ private fun LocateButton(
 ) {
     Surface(
         shape = RoundedCornerShape(FAB_CORNER),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         shadowElevation = FAB_ELEVATION,
         modifier = modifier
             .size(FAB_SIZE)
