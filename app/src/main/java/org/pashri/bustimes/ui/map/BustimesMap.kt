@@ -357,6 +357,7 @@ private class MapController(private val density: Float) {
             MapGeoJson.vehicles(
                 vehicles = decorations.vehicles,
                 selectedId = decorations.selectedVehicleId,
+                nowMillis = decorations.nowMillis,
                 positions = positions,
                 dimOtherServices = decorations.focusedServiceId,
             ),

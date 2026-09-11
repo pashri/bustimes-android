@@ -10,6 +10,7 @@ import org.maplibre.android.style.layers.PropertyFactory.circleColor
 import org.maplibre.android.style.layers.PropertyFactory.circleOpacity
 import org.maplibre.android.style.layers.PropertyFactory.circleRadius
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
+import org.maplibre.android.style.layers.PropertyFactory.circleStrokeOpacity
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
 import org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap
 import org.maplibre.android.style.layers.PropertyFactory.iconAnchor
@@ -31,6 +32,7 @@ import org.maplibre.android.style.layers.PropertyFactory.textFont
 import org.maplibre.android.style.layers.PropertyFactory.textHaloColor
 import org.maplibre.android.style.layers.PropertyFactory.textHaloWidth
 import org.maplibre.android.style.layers.PropertyFactory.textIgnorePlacement
+import org.maplibre.android.style.layers.PropertyFactory.textOpacity
 import org.maplibre.android.style.layers.PropertyFactory.textSize
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.SymbolLayer
@@ -244,7 +246,7 @@ object MapLayers {
                 ),
             ),
         )
-        .withFilter(notDimmed())
+        .withFilter(Expression.all(notDimmed(), notStale()))
         .apply { minZoom = MapDefaults.VEHICLES_MIN_ZOOM.toFloat() }
 
     /**
@@ -277,6 +279,11 @@ object MapLayers {
                     literal(STROKE),
                 ),
             ),
+            // The white ring has to fade with the body. Left solid, it draws
+            // a crisp outline around a bus whose position is old, which reads
+            // as more certain than the fill it surrounds.
+            circleOpacity(get(MapGeoJson.PROPERTY_OPACITY)),
+            circleStrokeOpacity(get(MapGeoJson.PROPERTY_OPACITY)),
         )
         .apply { minZoom = MapDefaults.VEHICLES_MIN_ZOOM.toFloat() }
 
@@ -296,6 +303,7 @@ object MapLayers {
             textHaloWidth(LABEL_HALO),
             textAllowOverlap(true),
             textIgnorePlacement(true),
+            textOpacity(get(MapGeoJson.PROPERTY_OPACITY)),
         )
         // A line number greyed to the same tone as its circle is an
         // illegible mark that still draws the eye, so dimmed buses lose
@@ -311,6 +319,10 @@ object MapLayers {
     /** Matches only features that are not being played down. */
     private fun notDimmed(): Expression =
         Expression.not(eq(get(MapGeoJson.PROPERTY_DIMMED), literal(true)))
+
+    /** Matches only features whose position is recent enough to have a bearing. */
+    private fun notStale(): Expression =
+        Expression.not(eq(get(MapGeoJson.PROPERTY_STALE), literal(true)))
 
     /**
      * Interpolates the body radius across the zooms vehicles are drawn at,

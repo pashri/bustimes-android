@@ -1,5 +1,6 @@
 package org.pashri.bustimes.ui.map
 
+import org.pashri.bustimes.data.model.Freshness
 import org.pashri.bustimes.data.model.StopFeature
 import org.pashri.bustimes.data.model.StopTime
 import org.pashri.bustimes.data.model.Vehicle
@@ -50,6 +51,18 @@ data class MapDecorations(
     val selectedStop: SelectedStop? = null,
     /** Stops of the selected trip, drawn larger than surrounding stops. */
     val routeStops: List<StopTime> = emptyList(),
+    /**
+     * The clock each vehicle's position is aged against, from `ClockSkew`.
+     *
+     * Held here rather than read at draw time so the map and the journey
+     * panel measure the same bus against the same instant, and bumped on its
+     * own timer so a position keeps getting older when polling has stopped.
+     *
+     * Zero means no clock has been read yet, which [Freshness] treats as an
+     * unknown age and therefore draws as current — a first frame must not
+     * declare the whole fleet stale.
+     */
+    val nowMillis: Long = 0L,
 ) {
     /**
      * Everything drawn for a selection, removed.
@@ -65,6 +78,7 @@ data class MapDecorations(
     fun withoutSelection(): MapDecorations = MapDecorations(
         stops = stops,
         vehicles = vehicles,
+        nowMillis = nowMillis,
     )
 }
 

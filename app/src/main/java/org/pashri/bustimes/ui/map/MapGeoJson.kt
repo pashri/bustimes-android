@@ -5,6 +5,7 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
+import org.pashri.bustimes.data.model.Freshness
 import org.pashri.bustimes.data.model.StopFeature
 import org.pashri.bustimes.data.model.StopTime
 import org.pashri.bustimes.data.model.Vehicle
@@ -49,10 +50,32 @@ object MapGeoJson {
     const val PROPERTY_DIMMED = "dimmed"
 
     /**
+     * Feature property holding how solidly to draw a vehicle, 0 to 1.
+     *
+     * Computed in Kotlin rather than as a style `interpolate` expression,
+     * because it is derived from the clock rather than from the zoom or a
+     * flag: an age is app state that happens to be rendered, and keeping the
+     * ramp out of the style is what makes it unit-testable.
+     */
+    const val PROPERTY_OPACITY = "opacity"
+
+    /**
+     * Feature property flagging a position too old to imply a direction.
+     *
+     * Drives the heading layer's filter, the same way [PROPERTY_DIMMED] gates
+     * the layers that would be illegible.
+     */
+    const val PROPERTY_STALE = "stale"
+
+    /**
      * Builds the vehicle layer's source data.
      *
      * @param vehicles the vehicles to draw.
      * @param selectedId the vehicle drawn in the selected style, if any.
+     * @param nowMillis the current time from `ClockSkew.now()`, against which
+     *   each position's age is measured. Deliberately has no default: a
+     *   caller that forgot to pass a clock would silently draw a stale fleet
+     *   as current, which is the very bug this property exists to fix.
      * @param positions overrides a vehicle's drawn position by id, used to
      *   animate between two reported fixes. Vehicles absent from the map are
      *   drawn where they were reported.
@@ -63,17 +86,21 @@ object MapGeoJson {
     fun vehicles(
         vehicles: List<Vehicle>,
         selectedId: Long?,
+        nowMillis: Long,
         positions: Map<Long, DoubleArray> = emptyMap(),
         dimOtherServices: Long? = null,
     ): FeatureCollection {
         val features = vehicles.map { vehicle ->
             val drawn = positions[vehicle.id]
+            val age = Freshness.ageSeconds(vehicle.datetime, nowMillis)
             val properties = JsonObject().apply {
                 addProperty(PROPERTY_VEHICLE_ID, vehicle.id)
                 addProperty(PROPERTY_LABEL, vehicle.service?.lineName.orEmpty())
                 addProperty(PROPERTY_BEARING, vehicle.heading ?: 0.0)
                 addProperty(PROPERTY_COLOUR, liveryColour(vehicle))
                 addProperty(PROPERTY_SELECTED, vehicle.id == selectedId)
+                addProperty(PROPERTY_OPACITY, Freshness.opacityForAge(age))
+                addProperty(PROPERTY_STALE, Freshness.isArrowStale(age))
                 addProperty(
                     PROPERTY_DIMMED,
                     dimOtherServices != null && vehicle.serviceId != dimOtherServices,
