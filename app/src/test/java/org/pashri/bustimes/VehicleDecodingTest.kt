@@ -7,6 +7,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pashri.bustimes.data.model.Vehicle
+import org.pashri.bustimes.data.model.VehicleJourneySummary
 import org.pashri.bustimes.data.repo.BustimesRepository
 
 class VehicleDecodingTest {
@@ -106,5 +107,20 @@ class VehicleDecodingTest {
         )
 
         assertEquals("17-luton-wigmore", decoded.service?.slug)
+    }
+
+    @Test
+    fun `a vehicle journey decodes as a bare object, not a page`() {
+        // /api/vehiclejourneys/{id}/ returns the journey itself, unlike the
+        // list endpoint's {"results": [...]} shape. Decoding it as a page
+        // would silently read nothing and the id filter bug it replaces is
+        // exactly the kind of thing that comes back if this regresses.
+        val decoded = json.decodeFromString<VehicleJourneySummary>(
+            """{"id":934824969,"trip_id":652479788,
+               "route_name":"m2","destination":"Poole"}""",
+        )
+
+        assertEquals(934824969L, decoded.id)
+        assertEquals(652479788L, decoded.tripId)
     }
 }
