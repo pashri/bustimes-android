@@ -12,6 +12,8 @@
     <string name="departures_updated_hours_ago">Updated %1$dh ago</string>
     <string name="retry">Retry</string>
     <string name="offline_banner">Offline — showing saved data</string>
+    <string name="app_error_banner">Something went wrong — try again shortly</string>
+    <string name="siblings_truncated">+%1$d more nearby</string>
     <string name="approximate_location_hint">Approximate location only — tap to enable precise</string>
     <string name="diagnostics">Show diagnostics</string>
     <string name="add_favourite">Add to favourites</string>

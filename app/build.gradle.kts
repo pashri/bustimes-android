@@ -105,4 +105,5 @@ dependencies {
     implementation(libs.datastore.preferences)
 
     testImplementation(libs.junit)
+    testImplementation(libs.mockwebserver)
 }

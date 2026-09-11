@@ -48,6 +48,8 @@ data class MapDecorations(
      * of its circle — because bustimes exposes no route colour in any JSON.
      */
     val siblingRoutes: List<SiblingRoute> = emptyList(),
+    /** Other buses on the focused service beyond [siblingRoutes]'s cap. */
+    val siblingsTruncatedCount: Int = 0,
     val selectedStop: SelectedStop? = null,
     /** Stops of the selected trip, drawn larger than surrounding stops. */
     val routeStops: List<StopTime> = emptyList(),

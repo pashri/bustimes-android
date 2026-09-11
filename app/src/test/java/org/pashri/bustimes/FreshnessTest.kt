@@ -57,20 +57,22 @@ class FreshnessTest {
 
     @Test
     fun `the agreed opacity ramp, minute by minute`() {
-        // The table this feature was designed around. Values are the ramp
-        // from full opacity at 120s down to the floor at 600s.
+        // The table this feature was designed around: a first ramp from full
+        // opacity at 60s down to the midpoint at 120s, then a second ramp down
+        // to the floor at 600s, so the fade starts where the label already
+        // stops saying "just now" instead of holding full opacity to 120s.
         val byMinute = (0..15).map { minute -> Freshness.opacityForAge(minute * 60L) }
 
         assertEquals(1.0000f, byMinute[0], 0.005f)
         assertEquals(1.0000f, byMinute[1], 0.005f)
-        assertEquals(1.0000f, byMinute[2], 0.005f)
-        assertEquals(0.9187f, byMinute[3], 0.005f)
-        assertEquals(0.8375f, byMinute[4], 0.005f)
-        assertEquals(0.7562f, byMinute[5], 0.005f)
-        assertEquals(0.6750f, byMinute[6], 0.005f)
-        assertEquals(0.5938f, byMinute[7], 0.005f)
-        assertEquals(0.5125f, byMinute[8], 0.005f)
-        assertEquals(0.4313f, byMinute[9], 0.005f)
+        assertEquals(0.7000f, byMinute[2], 0.005f)
+        assertEquals(0.6562f, byMinute[3], 0.005f)
+        assertEquals(0.6125f, byMinute[4], 0.005f)
+        assertEquals(0.5687f, byMinute[5], 0.005f)
+        assertEquals(0.5250f, byMinute[6], 0.005f)
+        assertEquals(0.4812f, byMinute[7], 0.005f)
+        assertEquals(0.4375f, byMinute[8], 0.005f)
+        assertEquals(0.3937f, byMinute[9], 0.005f)
         assertEquals(0.3500f, byMinute[10], 0.005f)
         assertEquals(0.3500f, byMinute[15], 0.005f)
     }
@@ -90,7 +92,12 @@ class FreshnessTest {
 
     @Test
     fun `the ramp is continuous at both ends`() {
-        assertEquals(1f, Freshness.opacityForAge(Freshness.FRESH_LIMIT_SECONDS), 0.0001f)
+        assertEquals(1f, Freshness.opacityForAge(Freshness.RAMP_START_SECONDS), 0.0001f)
+        assertEquals(
+            Freshness.RAMP_MID_OPACITY,
+            Freshness.opacityForAge(Freshness.FRESH_LIMIT_SECONDS),
+            0.0001f,
+        )
         assertEquals(
             Freshness.STALE_OPACITY_FLOOR,
             Freshness.opacityForAge(Freshness.STALE_LIMIT_SECONDS),
