@@ -269,7 +269,11 @@ class MapViewModel(
                     longitude = knownLongitude ?: position?.get(0),
                 ),
                 decorations = current.decorations.copy(
-                    selectedStopAtco = atcoCode,
+                    selectedStop = SelectedStop(
+                        atcoCode = atcoCode,
+                        longitude = knownLongitude ?: position?.get(0),
+                        latitude = knownLatitude ?: position?.get(1),
+                    ),
                     routeDimmed = current.decorations.routeLegs.isNotEmpty(),
                 ),
             )
@@ -485,7 +489,7 @@ class MapViewModel(
                 selection = SelectionState.Journey(tripId = tripId, vehicle = vehicle),
                 decorations = current.decorations.copy(
                     selectedVehicleId = vehicle?.id,
-                    selectedStopAtco = null,
+                    selectedStop = null,
                     routeDimmed = false,
                 ),
             )
@@ -501,7 +505,7 @@ class MapViewModel(
             current.copy(
                 selection = journey.copy(vehicle = pinnedVehicle ?: journey.vehicle),
                 decorations = current.decorations.copy(
-                    selectedStopAtco = null,
+                    selectedStop = null,
                     routeDimmed = false,
                 ),
             )

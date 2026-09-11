@@ -293,7 +293,7 @@ private class MapController(private val density: Float) {
         source(style, MapLayers.SOURCE_STOPS)?.setGeoJson(
             MapGeoJson.stops(
                 stops = decorations.stops,
-                selectedAtco = decorations.selectedStopAtco,
+                selectedAtco = decorations.selectedStop?.atcoCode,
                 dimmed = decorations.focusedServiceId != null,
             ),
         )
@@ -303,6 +303,8 @@ private class MapController(private val density: Float) {
             ?.setGeoJson(MapGeoJson.routeLines(decorations.routeLegs))
         source(style, MapLayers.SOURCE_ROUTE_STOPS)
             ?.setGeoJson(MapGeoJson.routeStops(decorations.routeStops))
+        source(style, MapLayers.SOURCE_SELECTED_STOP)
+            ?.setGeoJson(MapGeoJson.selectedStop(decorations.selectedStop))
         applyRouteStyle(style, decorations)
         startTween(decorations)
     }
@@ -424,7 +426,7 @@ private class MapController(private val density: Float) {
         style.addImage(MapIcons.STOP_ROUTE, MapIcons.stop(density, onRoute = true))
     }
 
-    /** Order matters: route under stops, stops under buses. */
+    /** Order matters: route under stops, stops under the selection ring, all under buses. */
     private fun addLayers(style: Style) {
         style.addLayer(MapLayers.siblingRoutes())
         style.addLayer(MapLayers.routeCasing())
@@ -433,6 +435,7 @@ private class MapController(private val density: Float) {
         style.addLayer(MapLayers.routeDashed())
         style.addLayer(MapLayers.stops())
         style.addLayer(MapLayers.routeStops())
+        style.addLayer(MapLayers.selectedStop())
         style.addLayer(MapLayers.vehicleHeadings())
         style.addLayer(MapLayers.vehicles())
         style.addLayer(MapLayers.vehicleLabels())

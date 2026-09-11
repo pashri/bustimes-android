@@ -47,7 +47,7 @@ data class MapDecorations(
      * of its circle — because bustimes exposes no route colour in any JSON.
      */
     val siblingRoutes: List<SiblingRoute> = emptyList(),
-    val selectedStopAtco: String? = null,
+    val selectedStop: SelectedStop? = null,
     /** Stops of the selected trip, drawn larger than surrounding stops. */
     val routeStops: List<StopTime> = emptyList(),
 ) {
@@ -67,6 +67,24 @@ data class MapDecorations(
         vehicles = vehicles,
     )
 }
+
+/**
+ * The stop the user has selected, and where to draw its indicator.
+ *
+ * The position is carried rather than looked up, so the ring marking the
+ * selection is drawn from the selection alone. A favourite opened from a cold
+ * start belongs to neither the loaded viewport nor any selected route, so a
+ * lookup would leave exactly that case unmarked.
+ *
+ * @property atcoCode the stop's ATCO code.
+ * @property longitude the stop's longitude, when known.
+ * @property latitude the stop's latitude, when known.
+ */
+data class SelectedStop(
+    val atcoCode: String,
+    val longitude: Double?,
+    val latitude: Double?,
+)
 
 /**
  * Another bus's route on the focused service.
