@@ -106,7 +106,7 @@ object MapIcons {
         }
         canvas.drawCircle(centre, centre, centre, ring)
         val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (onRoute) Color.rgb(27, 94, 32) else Color.rgb(90, 90, 90)
+            color = if (onRoute) Color.rgb(184, 134, 11) else Color.rgb(90, 90, 90)
             style = Paint.Style.FILL
         }
         canvas.drawCircle(centre, centre, centre - RING_DP * density, fill)
