@@ -17,6 +17,9 @@ object MapIcons {
     /** Style image id for the direction-of-travel wedge. */
     const val HEADING = "vehicle-heading"
 
+    /** Style image id for a stop's flag-facing wedge. */
+    const val STOP_HEADING = "stop-heading"
+
     /** Style image id for an ordinary stop. */
     const val STOP = "stop-marker"
 
@@ -24,26 +27,38 @@ object MapIcons {
     const val STOP_ROUTE = "stop-marker-route"
 
     /**
-     * Builds the direction-of-travel arrowhead.
+     * Builds a direction wedge: a bus's direction of travel, or a stop's
+     * flag-facing direction.
      *
      * Drawn pointing up, offset from the centre of a deliberately oversized
      * bitmap. MapLibre rotates a symbol about its anchor, and the anchor is
      * the bitmap's centre, so putting the arrow above the centre and leaving
-     * the middle empty makes it orbit the bus at a fixed radius rather than
-     * hanging off one side of it. The empty middle is where the coloured body
-     * circle shows through.
+     * the middle empty makes it orbit the marker at a fixed radius rather
+     * than hanging off one side of it. The empty middle is where the
+     * coloured body circle shows through.
+     *
+     * A stop's wedge is generated at its own, smaller size rather than by
+     * scaling the bus one down: a 44dp bitmap downscaled to a stop's 13dp
+     * blurs, and the 2dp white outline that keeps the wedge legible over the
+     * dark basemap would shrink to 0.6dp and vanish.
      *
      * @param density the display density, so the icon is crisp on any screen.
+     * @param forStop draws the smaller stop wedge instead of the bus one.
      * @return the arrowhead bitmap.
      */
-    fun heading(density: Float): Bitmap {
-        val size = (BITMAP_SIZE_DP * density).toInt()
+    fun heading(density: Float, forStop: Boolean = false): Bitmap {
+        val orbitDp = if (forStop) STOP_ORBIT_DP else ORBIT_DP
+        val arrowHeightDp = if (forStop) STOP_ARROW_HEIGHT_DP else ARROW_HEIGHT_DP
+        val halfWidthDp = if (forStop) STOP_ARROW_HALF_WIDTH_DP else ARROW_HALF_WIDTH_DP
+        val strokeDp = if (forStop) STOP_HEADING_STROKE_DP else HEADING_STROKE_DP
+        // Twice the furthest the arrow reaches, so rotation never clips it.
+        val size = (2f * (orbitDp + arrowHeightDp) * density).toInt()
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val centre = size / 2f
-        val tip = centre - (ORBIT_DP + ARROW_HEIGHT_DP) * density
-        val base = centre - ORBIT_DP * density
-        val halfWidth = ARROW_HALF_WIDTH_DP * density
+        val tip = centre - (orbitDp + arrowHeightDp) * density
+        val base = centre - orbitDp * density
+        val halfWidth = halfWidthDp * density
 
         val path = Path().apply {
             moveTo(centre, tip)
@@ -58,7 +73,7 @@ object MapIcons {
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.WHITE
                 style = Paint.Style.STROKE
-                strokeWidth = 2f * density
+                strokeWidth = strokeDp * density
                 strokeJoin = Paint.Join.ROUND
             },
         )
@@ -102,9 +117,19 @@ object MapIcons {
     private const val ORBIT_DP = 13f
     private const val ARROW_HEIGHT_DP = 9f
     private const val ARROW_HALF_WIDTH_DP = 6f
+    private const val HEADING_STROKE_DP = 2f
 
-    /** Twice the furthest the arrow reaches, so rotation never clips it. */
-    private const val BITMAP_SIZE_DP = 2f * (ORBIT_DP + ARROW_HEIGHT_DP)
+    /**
+     * The stop wedge's own, smaller geometry.
+     *
+     * Orbit derived from the vehicle wedge's own orbit:radius ratio (~1.15)
+     * applied to the stop body's [MapLayers] `STOP_MIN_RADIUS` of 3.5.
+     */
+    private const val STOP_ORBIT_DP = 4f
+    private const val STOP_ARROW_HEIGHT_DP = 4f
+    private const val STOP_ARROW_HALF_WIDTH_DP = 2.6f
+    private const val STOP_HEADING_STROKE_DP = 1f
+
     private const val STOP_SIZE_DP = 12f
     private const val STOP_ROUTE_SIZE_DP = 16f
     private const val RING_DP = 2f

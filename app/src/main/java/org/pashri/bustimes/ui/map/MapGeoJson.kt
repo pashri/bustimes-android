@@ -136,7 +136,10 @@ object MapGeoJson {
             val properties = JsonObject().apply {
                 addProperty(PROPERTY_ATCO, stop.atcoCode.orEmpty())
                 addProperty(PROPERTY_LABEL, stop.properties.name)
-                addProperty(PROPERTY_BEARING, stop.properties.bearing ?: 0.0)
+                // Omitted, not written as null, when unknown: Expression.has
+                // returns true for a present-but-null key, which would draw a
+                // confident north arrow on a stop with no known bearing.
+                stop.properties.bearing?.let { addProperty(PROPERTY_BEARING, it) }
                 addProperty(PROPERTY_SELECTED, stop.atcoCode != null && stop.atcoCode == selectedAtco)
                 addProperty(PROPERTY_DIMMED, dimmed)
             }

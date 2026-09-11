@@ -2,6 +2,8 @@ package org.pashri.bustimes.ui.map
 
 import android.animation.ValueAnimator
 import android.content.Context
+import android.graphics.PointF
+import android.graphics.RectF
 import android.view.Gravity
 import android.view.animation.LinearInterpolator
 import androidx.compose.foundation.layout.WindowInsets
@@ -32,6 +34,8 @@ import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.Point
 import org.pashri.bustimes.data.net.BoundingBox
 
 /**
@@ -423,6 +427,7 @@ private class MapController(private val density: Float) {
 
     private fun addImages(style: Style) {
         style.addImage(MapIcons.HEADING, MapIcons.heading(density))
+        style.addImage(MapIcons.STOP_HEADING, MapIcons.heading(density, forStop = true))
         style.addImage(MapIcons.STOP, MapIcons.stop(density, onRoute = false))
         style.addImage(MapIcons.STOP_ROUTE, MapIcons.stop(density, onRoute = true))
     }
@@ -435,6 +440,7 @@ private class MapController(private val density: Float) {
         style.addLayer(MapLayers.routeCasingDashed())
         style.addLayer(MapLayers.routeDashed())
         style.addLayer(MapLayers.stops())
+        style.addLayer(MapLayers.stopHeadings())
         style.addLayer(MapLayers.routeStops())
         style.addLayer(MapLayers.selectedStop())
         style.addLayer(MapLayers.vehicleHeadings())
@@ -505,8 +511,14 @@ private class MapController(private val density: Float) {
     /**
      * Resolves a tap to a feature.
      *
-     * Buses are queried before stops so a bus sitting at its stop is selected
-     * in preference to the stop underneath it.
+     * A bus sitting exactly at its stop wins outright: querying the tapped
+     * point alone against [MapLayers.LAYER_VEHICLES] is precisely "inside the
+     * drawn circle" at the current zoom, selected and dimmed variants
+     * included, so a genuine overlap is never in question. Otherwise a
+     * generous box around the tap is queried across vehicles and stops
+     * together, and the single nearest feature to the tap wins — so a stop
+     * directly under the thumb cannot lose to a bus merely somewhere in the
+     * box, while a bus close enough to matter still can.
      */
     private fun handleClick(map: MapLibreMap, point: LatLng): Boolean {
         val screenPoint = map.projection.toScreenLocation(point)
@@ -518,9 +530,32 @@ private class MapController(private val density: Float) {
                 return true
             }
         }
-        val stopLayers = arrayOf(MapLayers.LAYER_ROUTE_STOPS, MapLayers.LAYER_STOPS)
-        val stop = map.queryRenderedFeatures(screenPoint, *stopLayers).firstOrNull()
-        val atco = stop?.getStringProperty(MapGeoJson.PROPERTY_ATCO)
+        val tolerance = TAP_TOLERANCE_DP * density
+        val box = RectF(
+            screenPoint.x - tolerance,
+            screenPoint.y - tolerance,
+            screenPoint.x + tolerance,
+            screenPoint.y + tolerance,
+        )
+        val vehiclesInBox = map.queryRenderedFeatures(box, MapLayers.LAYER_VEHICLES)
+        val stopsInBox = map.queryRenderedFeatures(
+            box,
+            MapLayers.LAYER_ROUTE_STOPS,
+            MapLayers.LAYER_STOPS,
+        )
+        val nearestVehicle = nearestTo(map, screenPoint, vehiclesInBox)
+        val nearestStop = nearestTo(map, screenPoint, stopsInBox)
+        val vehicleDistance = nearestVehicle?.let { squaredDistance(map, screenPoint, it) }
+        val stopDistance = nearestStop?.let { squaredDistance(map, screenPoint, it) }
+
+        if (vehicleDistance != null && (stopDistance == null || vehicleDistance <= stopDistance)) {
+            val id = nearestVehicle.getNumberProperty(MapGeoJson.PROPERTY_VEHICLE_ID)?.toLong()
+            if (id != null) {
+                onVehicleTapped?.invoke(id)
+                return true
+            }
+        }
+        val atco = nearestStop?.getStringProperty(MapGeoJson.PROPERTY_ATCO)
         if (!atco.isNullOrBlank()) {
             onStopTapped?.invoke(atco)
             return true
@@ -528,11 +563,32 @@ private class MapController(private val density: Float) {
         return false
     }
 
+    /** The single feature nearest [screenPoint], or null when [features] is empty. */
+    private fun nearestTo(map: MapLibreMap, screenPoint: PointF, features: List<Feature>): Feature? =
+        features.minByOrNull { squaredDistance(map, screenPoint, it) }
+
+    /**
+     * The squared screen-space distance from [screenPoint] to [feature].
+     *
+     * Only ever compared against other squared distances, so there is no
+     * need to take the square root.
+     */
+    private fun squaredDistance(map: MapLibreMap, screenPoint: PointF, feature: Feature): Double {
+        val point = feature.geometry() as? Point ?: return Double.MAX_VALUE
+        val featureScreen = map.projection.toScreenLocation(LatLng(point.latitude(), point.longitude()))
+        val dx = (featureScreen.x - screenPoint.x).toDouble()
+        val dy = (featureScreen.y - screenPoint.y).toDouble()
+        return dx * dx + dy * dy
+    }
+
     private companion object {
         const val EASE_MILLIS = 600
         const val DIMMED_OPACITY = 0.35f
         const val CASING_FACTOR = 0.8f
         const val ROUTE_PADDING_DP = 48f
+
+        /** Half Android's 48dp minimum touch target. */
+        const val TAP_TOLERANCE_DP = 24f
     }
 }
 

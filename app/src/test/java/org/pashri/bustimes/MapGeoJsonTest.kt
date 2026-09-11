@@ -7,6 +7,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.maplibre.geojson.Point
 import org.pashri.bustimes.data.model.Freshness
+import org.pashri.bustimes.data.model.PointGeometry
+import org.pashri.bustimes.data.model.StopFeature
+import org.pashri.bustimes.data.model.StopProperties
 import org.pashri.bustimes.data.model.Vehicle
 import org.pashri.bustimes.data.model.VehicleDetail
 import org.pashri.bustimes.data.repo.BustimesRepository
@@ -202,6 +205,33 @@ class MapGeoJsonTest {
     @Test
     fun `no siblings means nothing to draw`() {
         assertTrue(MapGeoJson.siblingRoutes(emptyList()).features()!!.isEmpty())
+    }
+
+    private fun stop(bearing: Double?) = StopFeature(
+        geometry = PointGeometry(coordinates = listOf(0.1, 52.2)),
+        properties = StopProperties(name = "Girton Road (near)", bearing = bearing),
+    )
+
+    @Test
+    fun `a stop with no bearing omits the property rather than writing null`() {
+        // Expression.has returns true for a present-but-null key, so writing
+        // null here would draw a confident north arrow on the ten-in-372
+        // stops with no known bearing.
+        val feature = MapGeoJson.stops(listOf(stop(bearing = null)), selectedAtco = null)
+            .features()!!.first()
+
+        assertFalse(feature.hasProperty(MapGeoJson.PROPERTY_BEARING))
+    }
+
+    @Test
+    fun `a north-facing stop keeps its genuine zero bearing`() {
+        // 0 is real north, not an unknown sentinel, and must survive as 0.0
+        // rather than being treated as missing.
+        val feature = MapGeoJson.stops(listOf(stop(bearing = 0.0)), selectedAtco = null)
+            .features()!!.first()
+
+        assertTrue(feature.hasProperty(MapGeoJson.PROPERTY_BEARING))
+        assertEquals(0.0, feature.getNumberProperty(MapGeoJson.PROPERTY_BEARING).toDouble(), 0.0)
     }
 }
 
