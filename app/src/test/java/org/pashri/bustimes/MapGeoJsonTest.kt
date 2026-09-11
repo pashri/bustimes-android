@@ -114,7 +114,7 @@ class MapGeoJsonTest {
         assertEquals(1.0f, features[0].getNumberProperty(MapGeoJson.PROPERTY_OPACITY).toFloat(), 0.005f)
         assertFalse(features[0].getBooleanProperty(MapGeoJson.PROPERTY_STALE))
         assertEquals(
-            0.7562f,
+            0.5687f,
             features[1].getNumberProperty(MapGeoJson.PROPERTY_OPACITY).toFloat(),
             0.005f,
         )

@@ -200,8 +200,19 @@ private fun MapOverlays(
             if (state.offline) {
                 MapPill(text = stringResource(R.string.offline_banner))
             }
+            if (state.appError) {
+                MapPill(text = stringResource(R.string.app_error_banner))
+            }
             if (state.zoomedOutForVehicles) {
                 MapPill(text = stringResource(R.string.zoom_in_for_buses))
+            }
+            if (state.decorations.siblingsTruncatedCount > 0) {
+                MapPill(
+                    text = stringResource(
+                        R.string.siblings_truncated,
+                        state.decorations.siblingsTruncatedCount,
+                    ),
+                )
             }
             if (showPreciseHint) {
                 MapPill(

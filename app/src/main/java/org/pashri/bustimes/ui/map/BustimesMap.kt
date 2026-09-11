@@ -170,6 +170,8 @@ private class MapController(private val density: Float) {
     /** Where each vehicle is currently drawn, which is not where it was reported. */
     private val drawnPositions = mutableMapOf<Long, DoubleArray>()
     private var tween: ValueAnimator? = null
+    private var cameraIdleListener: MapLibreMap.OnCameraIdleListener? = null
+    private var mapClickListener: MapLibreMap.OnMapClickListener? = null
     private var latestVehicles: MapDecorations? = null
 
     fun attach(
@@ -198,8 +200,12 @@ private class MapController(private val density: Float) {
                 pendingTarget = null
                 easeTo(target)
             }
-            ready.addOnCameraIdleListener { reportCameraIdle(ready, onCameraIdle) }
-            ready.addOnMapClickListener { point -> handleClick(ready, point) }
+            val cameraIdle = MapLibreMap.OnCameraIdleListener { reportCameraIdle(ready, onCameraIdle) }
+            val mapClick = MapLibreMap.OnMapClickListener { point -> handleClick(ready, point) }
+            cameraIdleListener = cameraIdle
+            mapClickListener = mapClick
+            ready.addOnCameraIdleListener(cameraIdle)
+            ready.addOnMapClickListener(mapClick)
         }
     }
 
@@ -212,6 +218,10 @@ private class MapController(private val density: Float) {
             Lifecycle.Event.ON_STOP -> view.onStop()
             Lifecycle.Event.ON_DESTROY -> {
                 tween?.cancel()
+                cameraIdleListener?.let { map?.removeOnCameraIdleListener(it) }
+                mapClickListener?.let { map?.removeOnMapClickListener(it) }
+                cameraIdleListener = null
+                mapClickListener = null
                 view.onDestroy()
             }
             else -> Unit

@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
@@ -79,7 +80,10 @@ class LocationProvider(private val context: Context) {
                 .addOnSuccessListener { location ->
                     continuation.resume(location?.let { DevicePosition(it.latitude, it.longitude) })
                 }
-                .addOnFailureListener { continuation.resume(null) }
+                .addOnFailureListener { error ->
+                    Log.w(TAG, "lastKnown() failed", error)
+                    continuation.resume(null)
+                }
         }
     }
 
@@ -102,7 +106,10 @@ class LocationProvider(private val context: Context) {
                 .addOnSuccessListener { location ->
                     continuation.resume(location?.let { DevicePosition(it.latitude, it.longitude) })
                 }
-                .addOnFailureListener { continuation.resume(null) }
+                .addOnFailureListener { error ->
+                    Log.w(TAG, "current() failed", error)
+                    continuation.resume(null)
+                }
         }
     }
 
@@ -111,5 +118,7 @@ class LocationProvider(private val context: Context) {
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
         )
+
+        const val TAG = "LocationProvider"
     }
 }

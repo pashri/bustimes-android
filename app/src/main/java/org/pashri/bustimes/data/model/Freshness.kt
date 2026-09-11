@@ -25,6 +25,17 @@ object Freshness {
     const val FRESH_LIMIT_SECONDS = 120L
 
     /**
+     * The age at which the opacity ramp begins, matching [describeAge]'s own
+     * "just now" cutoff so the fade and the label agree instead of the fade
+     * holding at full opacity for a minute past what the label already calls
+     * stale.
+     */
+    const val RAMP_START_SECONDS = 60L
+
+    /** The opacity reached at [FRESH_LIMIT_SECONDS], where the older ramp resumes. */
+    const val RAMP_MID_OPACITY = 0.7f
+
+    /**
      * At or above this age, the direction-of-travel arrow is withdrawn.
      *
      * A three-minute-old bearing on an urban route is frequently just wrong,
@@ -89,7 +100,8 @@ object Freshness {
     /**
      * How faintly to draw a bus of a given age.
      *
-     * Full opacity up to [FRESH_LIMIT_SECONDS], then a linear ramp down to
+     * Full opacity up to [RAMP_START_SECONDS], then a first ramp down to
+     * [RAMP_MID_OPACITY] at [FRESH_LIMIT_SECONDS], then a second ramp down to
      * [STALE_OPACITY_FLOOR] at [STALE_LIMIT_SECONDS], clamped at both ends.
      *
      * @param seconds the age, or null when unknown.
@@ -98,11 +110,16 @@ object Freshness {
      *   out the whole map.
      */
     fun opacityForAge(seconds: Long?): Float {
-        if (seconds == null || seconds <= FRESH_LIMIT_SECONDS) return 1f
+        if (seconds == null || seconds <= RAMP_START_SECONDS) return 1f
+        if (seconds <= FRESH_LIMIT_SECONDS) {
+            val span = (FRESH_LIMIT_SECONDS - RAMP_START_SECONDS).toFloat()
+            val travelled = (seconds - RAMP_START_SECONDS) / span
+            return 1f - (1f - RAMP_MID_OPACITY) * travelled
+        }
         if (seconds >= STALE_LIMIT_SECONDS) return STALE_OPACITY_FLOOR
         val span = (STALE_LIMIT_SECONDS - FRESH_LIMIT_SECONDS).toFloat()
         val travelled = (seconds - FRESH_LIMIT_SECONDS) / span
-        return 1f - (1f - STALE_OPACITY_FLOOR) * travelled
+        return RAMP_MID_OPACITY - (RAMP_MID_OPACITY - STALE_OPACITY_FLOOR) * travelled
     }
 
     /**

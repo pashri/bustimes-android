@@ -1,7 +1,9 @@
 package org.pashri.bustimes.data.repo
 
+import android.util.Log
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -102,6 +104,9 @@ class BustimesRepository(
             url = page.next
             pages++
         }
+        if (pages == maxPages && url != null) {
+            Log.w(TAG, "trip page cap ($maxPages) hit for service $serviceId on $date")
+        }
         return trips
     }
 
@@ -154,23 +159,39 @@ class BustimesRepository(
 
     private suspend fun <T> get(url: String, decode: (String) -> T): T =
         withContext(Dispatchers.IO) {
-            val request = Request.Builder().url(url).build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw IOException("HTTP ${response.code} for $url")
+            for (backoff in RETRY_BACKOFF_MILLIS) {
+                try {
+                    return@withContext fetch(url, decode)
+                } catch (e: IOException) {
+                    delay(backoff)
                 }
-                decode(response.body?.string().orEmpty())
             }
+            fetch(url, decode)
         }
 
+    private fun <T> fetch(url: String, decode: (String) -> T): T {
+        val request = Request.Builder().url(url).build()
+        return client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code} for $url")
+            }
+            decode(response.body?.string().orEmpty())
+        }
+    }
+
     companion object {
+        /** Trip pages to follow before giving up. 100 trips per page. */
+        const val MAX_TRIP_PAGES = 18
+
+        /** Backoff before each retry of a failed request, in order. */
+        val RETRY_BACKOFF_MILLIS = listOf(500L, 2_000L, 4_000L)
+
+        private const val TAG = "BustimesRepository"
+
         /**
          * Tolerates fields bustimes.org adds over time, and treats absent
          * fields as their defaults so a payload gaining a key never crashes.
          */
-        /** Trip pages to follow before giving up. 100 trips per page. */
-        const val MAX_TRIP_PAGES = 6
-
         val defaultJson = Json {
             ignoreUnknownKeys = true
             explicitNulls = false

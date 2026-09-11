@@ -1,8 +1,10 @@
 package org.pashri.bustimes.ui.map
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -44,6 +46,8 @@ data class MapUiState(
     val selection: SelectionState = SelectionState.None,
     val loadingVehicles: Boolean = false,
     val offline: Boolean = false,
+    /** Set when a response failed for a reason other than connectivity. */
+    val appError: Boolean = false,
     /** Set when something asks the camera to move to a position. */
     val moveCameraTo: DevicePosition? = null,
     /** Set when the camera should frame the whole selected route. */
@@ -402,9 +406,10 @@ class MapViewModel(
      * Moves the map to where the user is now.
      *
      * The cached position is used first so the button responds immediately,
-     * then a fresh fix is requested and the camera moved again if it turns out
-     * somewhere else. Preferring the cache outright, as this did, meant the
-     * button kept returning to whatever stale fix the app started with.
+     * then a fresh fix is requested and the camera always moved to it: this is
+     * a direct request for the user's current position, so it should not be
+     * skipped just because the cache happened to be nearby — the cache can be
+     * old even when it is close.
      */
     fun onLocateRequested() {
         hasExplicitTarget = true
@@ -414,9 +419,7 @@ class MapViewModel(
                 _state.update { it.copy(moveCameraTo = cached) }
             }
             val fresh = locationProvider.current() ?: return@launch
-            if (cached == null || fresh.isFurtherThanAStopFrom(cached)) {
-                _state.update { it.copy(moveCameraTo = fresh) }
-            }
+            _state.update { it.copy(moveCameraTo = fresh) }
         }
     }
 
@@ -577,6 +580,13 @@ class MapViewModel(
                 vehicle.serviceId == serviceId &&
                     vehicle.id != selectedVehicleId &&
                     vehicle.tripId != null
+            }
+            _state.update { current ->
+                current.copy(
+                    decorations = current.decorations.copy(
+                        siblingsTruncatedCount = (siblings.size - MAX_SIBLINGS).coerceAtLeast(0),
+                    ),
+                )
             }
             for (sibling in siblings.take(MAX_SIBLINGS)) {
                 val tripId = sibling.tripId ?: continue
@@ -835,8 +845,11 @@ class MapViewModel(
             applyVehicles()
         } catch (error: CancellationException) {
             throw error
+        } catch (error: IOException) {
+            _state.update { it.copy(loadingVehicles = false, offline = true, appError = false) }
         } catch (error: Exception) {
-            _state.update { it.copy(loadingVehicles = false, offline = true) }
+            Log.e(TAG, "vehicle poll failed", error)
+            _state.update { it.copy(loadingVehicles = false, offline = false, appError = true) }
         }
     }
 
@@ -845,6 +858,7 @@ class MapViewModel(
             current.copy(
                 loadingVehicles = false,
                 offline = false,
+                appError = false,
                 decorations = current.decorations.copy(
                     vehicles = mergePinned(bboxVehicles, pinnedVehicle),
                 ),
@@ -923,6 +937,8 @@ class MapViewModel(
          * lines on it stops being readable anyway.
          */
         const val MAX_SIBLINGS = 6
+
+        private const val TAG = "MapViewModel"
     }
 
     /** Creates [MapViewModel] instances with their dependencies. */

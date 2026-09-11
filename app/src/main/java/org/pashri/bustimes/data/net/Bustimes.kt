@@ -7,6 +7,7 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import org.pashri.bustimes.BuildConfig
 
 /** Endpoint construction for bustimes.org. */
 object Bustimes {
@@ -17,8 +18,9 @@ object Bustimes {
      * Identifies this client honestly, with a contact URL, so the operator of
      * bustimes.org can see who is making the requests and get in touch.
      */
-    const val USER_AGENT =
-        "bustimes-android/0.1 (personal project; https://github.com/pashri/bustimes-android)"
+    val USER_AGENT =
+        "bustimes-android/${BuildConfig.VERSION_NAME} " +
+            "(personal project; https://github.com/pashri/bustimes-android)"
 
     /** Live vehicle positions inside a bounding box. */
     fun vehiclesInBox(box: BoundingBox): String =
