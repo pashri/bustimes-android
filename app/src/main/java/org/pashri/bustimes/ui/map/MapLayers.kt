@@ -220,12 +220,14 @@ object MapLayers {
      * present-but-null key. Also filtered on [notDimmed] so a route's dimmed
      * grey stops do not carry a dark arrow while a route is selected.
      *
-     * Sized off the same `STOP_MIN_ZOOM_STEP`/`STOP_MAX_ZOOM_STEP` curve as
-     * [stops] rather than the vehicle heading's zoom range, so the wedge
-     * shrinks with the stop's own circle instead of appearing at a fixed
-     * size against it. Scaled up again when the stop is selected, mirroring
-     * [vehicleHeadings], because [selectedStop] draws a ring far larger than
-     * the wedge was sized against.
+     * Held back to `STOP_MAX_ZOOM_STEP`, well above [stops]'s own floor:
+     * feedback after #14 shipped was that a wedge on every stop at typical
+     * zoom read as visual clutter, so the wedge now only appears once
+     * zoomed in close enough that the stop's circle is already at its
+     * largest — sized at that fixed scale, since there is no longer a zoom
+     * range left to interpolate across. Scaled up again when the stop is
+     * selected, mirroring [vehicleHeadings], because [selectedStop] draws a
+     * ring far larger than the wedge was sized against.
      */
     fun stopHeadings(): SymbolLayer = SymbolLayer(LAYER_STOP_HEADINGS, SOURCE_STOPS)
         .withProperties(
@@ -236,28 +238,14 @@ object MapLayers {
             iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
             iconAnchor(Property.ICON_ANCHOR_CENTER),
             iconSize(
-                Expression.interpolate(
-                    Expression.linear(),
-                    Expression.zoom(),
-                    Expression.stop(
-                        STOP_MIN_ZOOM_STEP,
-                        selectedOr(
-                            STOP_HEADING_MIN_SCALE * STOP_HEADING_SELECTED_FACTOR,
-                            STOP_HEADING_MIN_SCALE,
-                        ),
-                    ),
-                    Expression.stop(
-                        STOP_MAX_ZOOM_STEP,
-                        selectedOr(
-                            STOP_HEADING_MAX_SCALE * STOP_HEADING_SELECTED_FACTOR,
-                            STOP_HEADING_MAX_SCALE,
-                        ),
-                    ),
+                selectedOr(
+                    STOP_HEADING_MAX_SCALE * STOP_HEADING_SELECTED_FACTOR,
+                    STOP_HEADING_MAX_SCALE,
                 ),
             ),
         )
         .withFilter(Expression.all(Expression.has(MapGeoJson.PROPERTY_BEARING), notDimmed()))
-        .apply { minZoom = MapDefaults.STOPS_MIN_ZOOM.toFloat() }
+        .apply { minZoom = STOP_MAX_ZOOM_STEP.toFloat() }
 
     /**
      * The heading wedge, drawn under each bus so it reads as a direction.
@@ -449,8 +437,7 @@ object MapLayers {
     private const val SELECTED_MIN_ZOOM_STEP = 10
     private const val SELECTED_MAX_ZOOM_STEP = 16
 
-    /** Grows the stop wedge with the same ratio as [stops]'s own circle radius. */
-    private const val STOP_HEADING_MIN_SCALE = 1.0f
+    /** The stop wedge's fixed size, at the ratio [stops]'s own circle reaches at max zoom. */
     private const val STOP_HEADING_MAX_SCALE = STOP_MAX_RADIUS / STOP_MIN_RADIUS
 
     /** Clears the far larger [selectedStop] ring, mirroring [SELECTED_ICON_FACTOR]. */
