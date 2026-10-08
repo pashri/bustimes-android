@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.pashri.bustimes.data.model.DepartureBoard
+import org.pashri.bustimes.data.model.Freshness
 import org.pashri.bustimes.data.model.ServicePage
 import org.pashri.bustimes.data.model.StopCollection
 import org.pashri.bustimes.data.model.StopFeature
@@ -50,11 +51,14 @@ class HttpBustimesRepository(
     /**
      * The live position of the vehicle running a trip, with delay and progress.
      *
+     * The endpoint ignores its `trip` filter and returns every vehicle on the
+     * service, so the right one is picked out by [vehicleRunning].
+     *
      * @return the vehicle, or null when the trip is not currently tracked.
      */
     override suspend fun vehicleForTrip(serviceId: Long, tripId: Long): Vehicle? =
         get(Bustimes.vehiclesForTrip(serviceId, tripId)) {
-            json.decodeFromString<List<Vehicle>>(it).firstOrNull()
+            vehicleRunning(json.decodeFromString<List<Vehicle>>(it), tripId)
         }
 
     /**
@@ -178,6 +182,26 @@ class HttpBustimesRepository(
     }
 
     companion object {
+
+        /**
+         * Picks the vehicle running a trip out of a whole service's vehicles.
+         *
+         * Only the vehicle the server matched to the trip carries `progress`
+         * and `delay`, so that one wins. More than one vehicle can claim the
+         * same trip, so ties go to the most recent position.
+         *
+         * @param vehicles every vehicle the filtered endpoint returned.
+         * @param tripId the trip being followed.
+         * @return the vehicle, or null when none is running [tripId].
+         */
+        fun vehicleRunning(vehicles: List<Vehicle>, tripId: Long): Vehicle? =
+            vehicles
+                .filter { it.tripId == tripId }
+                .maxWithOrNull(
+                    compareBy<Vehicle>({ it.progress != null || it.delay != null })
+                        .thenBy { Freshness.fixedAtMillis(it.datetime) ?: Long.MIN_VALUE },
+                )
+
         /** Trip pages to follow before giving up. 100 trips per page. */
         const val MAX_TRIP_PAGES = 18
 
