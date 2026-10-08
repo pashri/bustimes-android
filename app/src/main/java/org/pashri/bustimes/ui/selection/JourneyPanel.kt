@@ -23,7 +23,8 @@ import org.pashri.bustimes.data.model.StopTime
 /**
  * The schedule of the selected journey.
  *
- * Shows aimed times always and live times when the operator supplies them.
+ * Shows aimed times always, and live times when the operator supplies them or
+ * when a late bus's delay can be carried forward to the stops ahead.
  * Most journeys outside London and the largest operators are never tracked,
  * so the aimed-only layout is the common case and is presented as normal
  * rather than as missing data.
@@ -57,7 +58,7 @@ fun JourneyPanel(
             journey.loading -> PanelSpinner()
             journey.failed -> PanelMessage(text = "Couldn't load this journey")
             else -> CallingPoints(
-                times = journey.trip?.times.orEmpty(),
+                times = journey.callingTimes,
                 onStopClicked = onStopClicked,
             )
         }
