@@ -12,7 +12,7 @@ import org.pashri.bustimes.data.model.StopFeature
 import org.pashri.bustimes.data.model.StopProperties
 import org.pashri.bustimes.data.model.Vehicle
 import org.pashri.bustimes.data.model.VehicleDetail
-import org.pashri.bustimes.data.repo.BustimesRepository
+import org.pashri.bustimes.data.repo.HttpBustimesRepository
 import org.pashri.bustimes.ui.map.MapDecorations
 import org.pashri.bustimes.ui.map.MapGeoJson
 import org.pashri.bustimes.ui.map.SelectedStop
@@ -140,7 +140,7 @@ class MapGeoJsonTest {
 
     @Test
     fun `every bus in a real bbox response can be aged`() {
-        val vehicles = BustimesRepository.defaultJson
+        val vehicles = HttpBustimesRepository.defaultJson
             .decodeFromString<List<Vehicle>>(fixture("vehicles_bbox.json"))
         val now = OffsetDateTime.parse("2026-09-10T13:40:00+01:00")
             .toInstant().toEpochMilli()
