@@ -62,6 +62,36 @@ class MapGeoJsonTest {
     }
 
     @Test
+    fun `a white bus gets a black outline`() {
+        assertEquals(MapGeoJson.BLACK, MapGeoJson.strokeColour("#FFFFFF"))
+        assertEquals(MapGeoJson.BLACK, MapGeoJson.strokeColour("#ffffff"))
+    }
+
+    @Test
+    fun `a near-white livery also gets a black outline`() {
+        assertEquals(MapGeoJson.BLACK, MapGeoJson.strokeColour("#F5F5F5"))
+        assertEquals(MapGeoJson.BLACK, MapGeoJson.strokeColour("#FFFDD0"))
+    }
+
+    @Test
+    fun `dark and mid liveries keep the white outline`() {
+        assertEquals(MapGeoJson.WHITE, MapGeoJson.strokeColour("#2E7D32"))
+        assertEquals(MapGeoJson.WHITE, MapGeoJson.strokeColour("#C62828"))
+        assertEquals(MapGeoJson.WHITE, MapGeoJson.strokeColour("#000000"))
+    }
+
+    @Test
+    fun `each bus carries an outline colour to match its livery`() {
+        val buses = listOf(bus(1, colour = "#ffffff"), bus(2, colour = "#1B5E20"))
+
+        val strokes = MapGeoJson.vehicles(buses, selectedId = null, nowMillis = 0L)
+            .features()!!
+            .map { it.getStringProperty(MapGeoJson.PROPERTY_STROKE_COLOUR) }
+
+        assertEquals(listOf(MapGeoJson.BLACK, MapGeoJson.WHITE), strokes)
+    }
+
+    @Test
     fun `only buses off the focused service are flagged as dimmed`() {
         val buses = listOf(bus(1, serviceId = 10), bus(2, serviceId = 10), bus(3, serviceId = 99))
 
