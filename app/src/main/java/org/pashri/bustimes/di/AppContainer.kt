@@ -4,10 +4,10 @@ import android.content.Context
 import org.pashri.bustimes.data.db.BustimesDatabase
 import org.pashri.bustimes.data.diagnostics.CrashLog
 import org.pashri.bustimes.data.favourites.FavouritesRepository
-import org.pashri.bustimes.data.location.LocationProvider
+import org.pashri.bustimes.data.location.FusedLocationProvider
 import org.pashri.bustimes.data.net.buildHttpClient
-import org.pashri.bustimes.data.prefs.CameraStore
-import org.pashri.bustimes.data.repo.BustimesRepository
+import org.pashri.bustimes.data.prefs.DataStoreCameraStore
+import org.pashri.bustimes.data.repo.HttpBustimesRepository
 import org.pashri.bustimes.ui.map.MapViewModel
 import org.pashri.bustimes.ui.timetable.TimetableViewModel
 
@@ -30,13 +30,13 @@ class AppContainer(context: Context) {
     val crashLog = CrashLog(context.filesDir)
 
     /** Reads from bustimes.org. */
-    val repository = BustimesRepository(httpClient)
+    val repository = HttpBustimesRepository(httpClient)
 
     /** Remembers where the map was last looking. */
-    val cameraStore = CameraStore(context)
+    val cameraStore = DataStoreCameraStore(context)
 
     /** Supplies the user's approximate position. */
-    val locationProvider = LocationProvider(context)
+    val locationProvider = FusedLocationProvider(context)
 
     /** Builds the map screen's view model. */
     val mapViewModelFactory =

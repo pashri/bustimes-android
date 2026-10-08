@@ -810,7 +810,7 @@ class MapViewModel(
         stalenessJob = viewModelScope.launch {
             while (true) {
                 _state.update {
-                    it.copy(decorations = it.decorations.copy(nowMillis = ClockSkew.now()))
+                    it.copy(decorations = it.decorations.copy(nowMillis = now()))
                 }
                 delay(MapDefaults.VEHICLE_POLL_MILLIS)
             }

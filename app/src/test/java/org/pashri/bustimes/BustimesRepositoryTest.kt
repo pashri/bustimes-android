@@ -12,6 +12,7 @@ import org.junit.Before
 import org.junit.Test
 import org.pashri.bustimes.data.net.BoundingBox
 import org.pashri.bustimes.data.repo.BustimesRepository
+import org.pashri.bustimes.data.repo.HttpBustimesRepository
 
 class BustimesRepositoryTest {
 
@@ -32,7 +33,7 @@ class BustimesRepositoryTest {
                 chain.proceed(redirected)
             }
             .build()
-        repository = BustimesRepository(client)
+        repository = HttpBustimesRepository(client)
     }
 
     @After

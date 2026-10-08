@@ -1,0 +1,199 @@
+package org.pashri.bustimes.data.repo
+
+import android.util.Log
+import java.io.IOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.pashri.bustimes.data.model.DepartureBoard
+import org.pashri.bustimes.data.model.ServicePage
+import org.pashri.bustimes.data.model.StopCollection
+import org.pashri.bustimes.data.model.StopFeature
+import org.pashri.bustimes.data.model.Timetable
+import org.pashri.bustimes.data.model.Trip
+import org.pashri.bustimes.data.model.TripPage
+import org.pashri.bustimes.data.model.Vehicle
+import org.pashri.bustimes.data.model.VehicleJourneySummary
+import org.pashri.bustimes.data.net.BoundingBox
+import org.pashri.bustimes.data.net.Bustimes
+import org.pashri.bustimes.data.parse.DeparturesParser
+import org.pashri.bustimes.data.parse.TimetableCsvParser
+
+/**
+ * Every read from bustimes.org, over HTTP.
+ *
+ * There is no local mirror of upstream data: the OkHttp disk cache handles
+ * revalidation and staleness, so this class only fetches and decodes. Room is
+ * reserved for the user's own data.
+ */
+class HttpBustimesRepository(
+    private val client: OkHttpClient,
+    private val json: Json = defaultJson,
+) : BustimesRepository {
+
+    /**
+     * Live vehicle positions in a bounding box.
+     *
+     * Responses omit `delay` and `progress`; use [vehicleForTrip] once a bus
+     * is selected to obtain those.
+     *
+     * @param box the viewport to fetch.
+     * @return every tracked vehicle inside the box.
+     * @throws IOException on network or HTTP failure.
+     */
+    override suspend fun vehiclesInBox(box: BoundingBox): List<Vehicle> =
+        get(Bustimes.vehiclesInBox(box)) { json.decodeFromString<List<Vehicle>>(it) }
+
+    /**
+     * The live position of the vehicle running a trip, with delay and progress.
+     *
+     * @return the vehicle, or null when the trip is not currently tracked.
+     */
+    override suspend fun vehicleForTrip(serviceId: Long, tripId: Long): Vehicle? =
+        get(Bustimes.vehiclesForTrip(serviceId, tripId)) {
+            json.decodeFromString<List<Vehicle>>(it).firstOrNull()
+        }
+
+    /**
+     * Stops in a bounding box.
+     *
+     * Served with `max-age=3600` and usually a CDN hit, so repeat calls are
+     * answered from the OkHttp cache without touching the network.
+     */
+    override suspend fun stopsInBox(box: BoundingBox): List<StopFeature> =
+        get(Bustimes.stopsInBox(box)) { json.decodeFromString<StopCollection>(it).features }
+
+    /**
+     * One trip's schedule, live times and per-leg road geometry.
+     *
+     * @param tripId numeric trip id, as carried by `/vehicles.json`.
+     */
+    override suspend fun trip(tripId: Long): Trip =
+        get(Bustimes.trip(tripId)) { json.decodeFromString<Trip>(it) }
+
+    /**
+     * Trips on a service for a date, without stop times.
+     *
+     * Used to map timetable columns to trip ids by matching a column's first
+     * departure against [Trip.start].
+     *
+     * Pages are followed, because one page is a hundred trips and is not
+     * ordered by time: a frequent service returns a page starting near midday
+     * and omitting the whole morning, so a single page leaves most of the
+     * timetable unmatched.
+     *
+     * Stops after [MAX_TRIP_PAGES] so a pathological service cannot loop
+     * forever.
+     *
+     * @param serviceId the service to list.
+     * @param date the service date, as `YYYY-MM-DD`.
+     * @return every trip found, across pages.
+     */
+    override suspend fun tripsForService(serviceId: Long, date: String): List<Trip> {
+        val trips = mutableListOf<Trip>()
+        var url: String? = Bustimes.tripsForService(serviceId, date)
+        var pages = 0
+        while (url != null && pages < MAX_TRIP_PAGES) {
+            val page = get(url) { json.decodeFromString<TripPage>(it) }
+            trips += page.results
+            url = page.next
+            pages++
+        }
+        if (pages == MAX_TRIP_PAGES && url != null) {
+            Log.w(TAG, "trip page cap ($MAX_TRIP_PAGES) hit for service $serviceId on $date")
+        }
+        return trips
+    }
+
+    /**
+     * Finds the trip behind a tracked journey.
+     *
+     * A departure board links tracked departures by journey id and untracked
+     * ones by trip id, so opening a live departure needs this hop. At a busy
+     * stop every row can be tracked, which without it leaves the whole board
+     * inert. The endpoint returns a single object keyed by journey id, not a
+     * page, so there is no result list to pick from.
+     *
+     * @param journeyId the journey from a departure board link.
+     * @return the trip id, or null when upstream has not matched one.
+     */
+    override suspend fun tripIdForJourney(journeyId: Long): Long? =
+        get(Bustimes.vehicleJourney(journeyId)) { body ->
+            json.decodeFromString<VehicleJourneySummary>(body).tripId
+        }
+
+    /**
+     * A stop's departure board.
+     *
+     * @throws org.pashri.bustimes.data.parse.DeparturesParseException if the
+     *   upstream template has changed shape.
+     */
+    override suspend fun departures(atcoCode: String): DepartureBoard =
+        get(Bustimes.departures(atcoCode)) { DeparturesParser.parse(it) }
+
+    /**
+     * A service's full timetable.
+     *
+     * @param serviceId numeric service id; the slug form is not accepted here.
+     */
+    override suspend fun timetable(serviceId: Long): Timetable =
+        get(Bustimes.timetableCsv(serviceId)) { TimetableCsvParser.parse(it) }
+
+    /**
+     * Resolves service slugs to the numeric ids the timetable and geometry
+     * endpoints require. Batched, so a whole departure board costs one call.
+     */
+    override suspend fun serviceIdsBySlug(slugs: Collection<String>): Map<String, Long> {
+        if (slugs.isEmpty()) return emptyMap()
+        return get(Bustimes.servicesBySlug(slugs)) { body ->
+            json.decodeFromString<ServicePage>(body).results
+                .mapNotNull { summary -> summary.slug?.let { it to summary.id } }
+                .toMap()
+        }
+    }
+
+    private suspend fun <T> get(url: String, decode: (String) -> T): T =
+        withContext(Dispatchers.IO) {
+            for (backoff in RETRY_BACKOFF_MILLIS) {
+                try {
+                    return@withContext fetch(url, decode)
+                } catch (e: IOException) {
+                    delay(backoff)
+                }
+            }
+            fetch(url, decode)
+        }
+
+    private fun <T> fetch(url: String, decode: (String) -> T): T {
+        val request = Request.Builder().url(url).build()
+        return client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code} for $url")
+            }
+            decode(response.body?.string().orEmpty())
+        }
+    }
+
+    companion object {
+        /** Trip pages to follow before giving up. 100 trips per page. */
+        const val MAX_TRIP_PAGES = 18
+
+        /** Backoff before each retry of a failed request, in order. */
+        val RETRY_BACKOFF_MILLIS = listOf(500L, 2_000L, 4_000L)
+
+        private const val TAG = "HttpBustimesRepository"
+
+        /**
+         * Tolerates fields bustimes.org adds over time, and treats absent
+         * fields as their defaults so a payload gaining a key never crashes.
+         */
+        val defaultJson = Json {
+            ignoreUnknownKeys = true
+            explicitNulls = false
+            coerceInputValues = true
+        }
+    }
+}

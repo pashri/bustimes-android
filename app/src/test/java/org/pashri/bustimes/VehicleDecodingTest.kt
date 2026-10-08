@@ -8,11 +8,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pashri.bustimes.data.model.Vehicle
 import org.pashri.bustimes.data.model.VehicleJourneySummary
-import org.pashri.bustimes.data.repo.BustimesRepository
+import org.pashri.bustimes.data.repo.HttpBustimesRepository
 
 class VehicleDecodingTest {
 
-    private val json: Json = BustimesRepository.defaultJson
+    private val json: Json = HttpBustimesRepository.defaultJson
 
     @Test
     fun `decodes a fractional delay`() {
