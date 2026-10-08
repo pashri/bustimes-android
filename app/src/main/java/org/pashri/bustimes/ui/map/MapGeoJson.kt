@@ -1,6 +1,7 @@
 package org.pashri.bustimes.ui.map
 
 import com.google.gson.JsonObject
+import kotlin.math.pow
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
@@ -36,6 +37,9 @@ object MapGeoJson {
 
     /** Feature property holding a livery colour as `#rrggbb`. */
     const val PROPERTY_COLOUR = "colour"
+
+    /** Feature property holding a vehicle's outline colour as `#rrggbb`. */
+    const val PROPERTY_STROKE_COLOUR = "strokeColour"
 
     /** Feature property flagging the selected feature. */
     const val PROPERTY_SELECTED = "selected"
@@ -97,7 +101,9 @@ object MapGeoJson {
                 addProperty(PROPERTY_VEHICLE_ID, vehicle.id)
                 addProperty(PROPERTY_LABEL, vehicle.service?.lineName.orEmpty())
                 addProperty(PROPERTY_BEARING, vehicle.heading ?: 0.0)
-                addProperty(PROPERTY_COLOUR, liveryColour(vehicle))
+                val colour = liveryColour(vehicle)
+                addProperty(PROPERTY_COLOUR, colour)
+                addProperty(PROPERTY_STROKE_COLOUR, strokeColour(colour))
                 addProperty(PROPERTY_SELECTED, vehicle.id == selectedId)
                 addProperty(PROPERTY_OPACITY, Freshness.opacityForAge(age))
                 addProperty(PROPERTY_STALE, Freshness.isArrowStale(age))
@@ -265,9 +271,53 @@ object MapGeoJson {
         return flat ?: css ?: DEFAULT_COLOUR
     }
 
+    /**
+     * Picks an outline colour that stands out against a livery.
+     *
+     * The ring is white so a bus reads against the map, but a white ring
+     * vanishes around a white or near-white bus, so light liveries get black.
+     *
+     * @param fill the livery colour as `#rrggbb`.
+     * @return [WHITE] for a dark or mid fill, [BLACK] for a light one.
+     */
+    fun strokeColour(fill: String): String =
+        if (relativeLuminance(fill) > LIGHT_LUMINANCE) BLACK else WHITE
+
+    /** Outline colour for buses with a dark or mid livery. */
+    const val WHITE = "#FFFFFF"
+
+    /** Outline colour for buses with a light livery. */
+    const val BLACK = "#000000"
+
+    /** WCAG relative luminance of a `#rrggbb` colour, from 0 (black) to 1 (white). */
+    private fun relativeLuminance(hex: String): Double {
+        val channels = (1 until HEX_LENGTH step 2).map { start ->
+            linearise(hex.substring(start, start + 2).toInt(radix = 16) / CHANNEL_MAX)
+        }
+        return LUMA_RED * channels[0] + LUMA_GREEN * channels[1] + LUMA_BLUE * channels[2]
+    }
+
+    private fun linearise(channel: Double): Double =
+        if (channel <= SRGB_LINEAR_CUTOFF) {
+            channel / SRGB_LINEAR_SLOPE
+        } else {
+            ((channel + SRGB_OFFSET) / (1 + SRGB_OFFSET)).pow(SRGB_GAMMA)
+        }
+
     /** An empty collection, used to clear a source without removing its layer. */
     fun empty(): FeatureCollection = FeatureCollection.fromFeatures(emptyList<Feature>())
 
     private const val HEX_LENGTH = 7
     private const val DEFAULT_COLOUR = "#2E7D32"
+
+    /** Above this, white sits too close to the fill to outline it. */
+    private const val LIGHT_LUMINANCE = 0.8
+    private const val CHANNEL_MAX = 255.0
+    private const val LUMA_RED = 0.2126
+    private const val LUMA_GREEN = 0.7152
+    private const val LUMA_BLUE = 0.0722
+    private const val SRGB_LINEAR_CUTOFF = 0.04045
+    private const val SRGB_LINEAR_SLOPE = 12.92
+    private const val SRGB_OFFSET = 0.055
+    private const val SRGB_GAMMA = 2.4
 }

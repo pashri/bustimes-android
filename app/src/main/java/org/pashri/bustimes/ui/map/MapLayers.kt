@@ -308,7 +308,13 @@ object MapLayers {
             // hundred metres of ground at z10, so every bus appears to sit on
             // top of the buildings around it however accurate the fix is.
             circleRadius(radiusByZoom()),
-            circleStrokeColor("#FFFFFF"),
+            circleStrokeColor(
+                Expression.switchCase(
+                    eq(get(MapGeoJson.PROPERTY_DIMMED), literal(true)),
+                    literal(MapGeoJson.WHITE),
+                    get(MapGeoJson.PROPERTY_STROKE_COLOUR),
+                ),
+            ),
             circleStrokeWidth(
                 Expression.switchCase(
                     eq(get(MapGeoJson.PROPERTY_SELECTED), literal(true)),
@@ -316,7 +322,7 @@ object MapLayers {
                     literal(STROKE),
                 ),
             ),
-            // The white ring has to fade with the body. Left solid, it draws
+            // The ring has to fade with the body. Left solid, it draws
             // a crisp outline around a bus whose position is old, which reads
             // as more certain than the fill it surrounds.
             circleOpacity(get(MapGeoJson.PROPERTY_OPACITY)),
