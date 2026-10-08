@@ -1,6 +1,7 @@
 package org.pashri.bustimes.ui.selection
 
 import org.pashri.bustimes.data.model.DepartureBoard
+import org.pashri.bustimes.data.model.StopTime
 import org.pashri.bustimes.data.model.Trip
 import org.pashri.bustimes.data.model.Vehicle
 
@@ -68,6 +69,18 @@ sealed interface SelectionState {
                     ?.stop?.name
                 return named?.takeIf { it.isNotBlank() } ?: code
             }
+
+        /**
+         * The calling points to list, with times projected from the delay.
+         *
+         * See [ExpectedTimes.project] for which stops get an estimate.
+         */
+        val callingTimes: List<StopTime>
+            get() = ExpectedTimes.project(
+                times = trip?.times.orEmpty(),
+                delaySeconds = vehicle?.delay,
+                nextStop = vehicle?.progress?.nextStop,
+            )
 
         /**
          * True when no vehicle is reporting against this journey.

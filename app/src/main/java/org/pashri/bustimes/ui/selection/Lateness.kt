@@ -77,7 +77,13 @@ object LatenessCalculator {
         }
     }
 
-    private fun parse(text: String?): LocalTime? {
+    /**
+     * Reads an `HH:mm` or `HH:mm:ss` time, ignoring any seconds.
+     *
+     * @param text the time as the API gives it.
+     * @return the time, or null when missing or unreadable.
+     */
+    internal fun parse(text: String?): LocalTime? {
         val trimmed = text?.trim()?.take(HH_MM_LENGTH) ?: return null
         return try {
             LocalTime.parse(trimmed)
